@@ -1,17 +1,22 @@
 # chapter_admin
 
-A new Flutter project.
+Chapter 앱 관리자 페이지 (Flutter Web)
 
-## Getting Started
+## 기능
 
-This project is a starting point for a Flutter application.
+- **결제상황** — 주문 목록, 입금 확인, PDF 다운로드
+- **유저상황** — Firestore 유저 목록, 활동 현황, 관리자 메모
+- **Analytics** — 준비 중
 
-A few resources to get you started if this is your first Flutter project:
+## 실행
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```bash
+flutter pub get
+flutter run -d chrome
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Firebase
+
+프로젝트: `chapter-cc187`
+
+`lib/firebase_options.dart`에 웹 앱 설정이 포함되어 있습니다.
