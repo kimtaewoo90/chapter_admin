@@ -13,6 +13,7 @@ class Order {
     this.bookTitle,
     this.amount,
     this.pdfUrl,
+    this.pdfStatus,
     this.snapshot,
     this.paidAt,
     this.updatedAt,
@@ -27,6 +28,7 @@ class Order {
   final String? bookTitle;
   final int? amount;
   final String? pdfUrl;
+  final String? pdfStatus;
   final Map<String, dynamic>? snapshot;
   final DateTime? paidAt;
   final DateTime? updatedAt;
@@ -43,6 +45,7 @@ class Order {
       bookTitle: data['bookTitle'] as String?,
       amount: (data['amount'] as num?)?.toInt(),
       pdfUrl: data['pdfUrl'] as String?,
+      pdfStatus: data['pdfStatus'] as String?,
       snapshot: data['snapshot'] as Map<String, dynamic>?,
       paidAt: _parseTimestamp(data['paidAt']),
       updatedAt: _parseTimestamp(data['updatedAt']),
@@ -63,4 +66,11 @@ class Order {
   }
 
   String get displayTitle => bookTitle ?? bookId;
+
+  bool get isPdfGenerating => pdfStatus == 'generating';
+
+  bool get canGeneratePdf =>
+      snapshotEntryCount > 0 &&
+      status != OrderStatus.pendingPayment &&
+      status != OrderStatus.cancelled;
 }

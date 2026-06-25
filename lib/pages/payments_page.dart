@@ -79,6 +79,83 @@ class _PaymentsPageState extends State<PaymentsPage> {
     }
   }
 
+  Future<void> _generatePdf(Order order) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('PDF 만들기'),
+        content: Text(
+          '${order.displayTitle} 주문(${order.id})의 PDF를 생성하시겠습니까?\n\n'
+          '스냅샷 일기 ${order.snapshotEntryCount}개를 Layout Engine으로 조판합니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('PDF 만들기'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _processingIds.add(order.id));
+    try {
+      final pdfUrl = await widget.orderService.generatePdf(order.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              pdfUrl.isNotEmpty
+                  ? 'PDF 생성 완료'
+                  : '${order.id} PDF 생성 요청 완료',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('PDF 생성 실패: $error'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _processingIds.remove(order.id));
+    }
+  }
+
+  bool _seeding = false;
+
+  Future<void> _seedTestOrder() async {
+    setState(() => _seeding = true);
+    try {
+      final orderId = await widget.orderService.seedTestOrder();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('테스트 주문 생성됨: $orderId')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('테스트 주문 생성 실패: $error'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _seeding = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -87,6 +164,8 @@ class _PaymentsPageState extends State<PaymentsPage> {
         _FilterBar(
           selected: _statusFilter,
           onChanged: (value) => setState(() => _statusFilter = value),
+          onSeedTestOrder: _seeding ? null : _seedTestOrder,
+          isSeeding: _seeding,
         ),
         Expanded(
           child: StreamBuilder<List<Order>>(
@@ -124,6 +203,9 @@ class _PaymentsPageState extends State<PaymentsPage> {
                     currencyFormat: _currencyFormat,
                     dateFormat: _dateFormat,
                     onConfirmPayment: () => _confirmPayment(order),
+                    onGeneratePdf: order.canGeneratePdf
+                        ? () => _generatePdf(order)
+                        : null,
                     onDownloadPdf: order.pdfUrl != null
                         ? () => _openPdf(order.pdfUrl!)
                         : null,
@@ -139,10 +221,17 @@ class _PaymentsPageState extends State<PaymentsPage> {
 }
 
 class _FilterBar extends StatelessWidget {
-  const _FilterBar({required this.selected, required this.onChanged});
+  const _FilterBar({
+    required this.selected,
+    required this.onChanged,
+    this.onSeedTestOrder,
+    this.isSeeding = false,
+  });
 
   final OrderStatus? selected;
   final ValueChanged<OrderStatus?> onChanged;
+  final VoidCallback? onSeedTestOrder;
+  final bool isSeeding;
 
   @override
   Widget build(BuildContext context) {
@@ -154,23 +243,46 @@ class _FilterBar extends StatelessWidget {
           bottom: BorderSide(color: Theme.of(context).dividerColor),
         ),
       ),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('상태 필터:', style: TextStyle(fontWeight: FontWeight.w600)),
-          FilterChip(
-            label: const Text('전체'),
-            selected: selected == null,
-            onSelected: (_) => onChanged(null),
-          ),
-          ...OrderStatus.values.map(
-            (status) => FilterChip(
-              label: Text(status.label),
-              selected: selected == status,
-              onSelected: (_) => onChanged(status),
+          if (onSeedTestOrder != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  onPressed: onSeedTestOrder,
+                  icon: isSeeding
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.science_outlined, size: 18),
+                  label: const Text('테스트 주문 넣기'),
+                ),
+              ),
             ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              const Text('상태 필터:', style: TextStyle(fontWeight: FontWeight.w600)),
+              FilterChip(
+                label: const Text('전체'),
+                selected: selected == null,
+                onSelected: (_) => onChanged(null),
+              ),
+              ...OrderStatus.values.map(
+                (status) => FilterChip(
+                  label: Text(status.label),
+                  selected: selected == status,
+                  onSelected: (_) => onChanged(status),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -185,6 +297,7 @@ class _OrderCard extends StatelessWidget {
     required this.currencyFormat,
     required this.dateFormat,
     required this.onConfirmPayment,
+    this.onGeneratePdf,
     this.onDownloadPdf,
   });
 
@@ -193,6 +306,7 @@ class _OrderCard extends StatelessWidget {
   final NumberFormat currencyFormat;
   final DateFormat dateFormat;
   final VoidCallback onConfirmPayment;
+  final VoidCallback? onGeneratePdf;
   final VoidCallback? onDownloadPdf;
 
   @override
@@ -258,6 +372,22 @@ class _OrderCard extends StatelessWidget {
                           )
                         : const Icon(Icons.check_circle_outline, size: 18),
                     label: const Text('입금확인'),
+                  ),
+                if (onGeneratePdf != null)
+                  FilledButton.tonalIcon(
+                    onPressed: isProcessing || order.isPdfGenerating
+                        ? null
+                        : onGeneratePdf,
+                    icon: isProcessing || order.isPdfGenerating
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.auto_stories, size: 18),
+                    label: Text(
+                      order.pdfUrl != null ? 'PDF 재생성' : 'PDF 만들기',
+                    ),
                   ),
                 if (onDownloadPdf != null)
                   OutlinedButton.icon(
