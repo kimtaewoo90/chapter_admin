@@ -1,5 +1,7 @@
 /** 스티커 사진 콜라주 — 원본 비율 유지, 균일 스케일만 허용 */
 
+import { PHOTO_FRAME } from '../pdf/photoStyle';
+
 export interface ImageMeta {
   width: number;
   height: number;
@@ -25,18 +27,6 @@ export interface StickerCollage {
   placements: StickerPlacement[];
   totalHeight: number;
 }
-
-export const STICKER = {
-  padding: 7,
-  gap: 14,
-  rowGap: 18,
-  radius: 6,
-  /** 단일 사진 — 긴 변 상한 */
-  maxLongSingle: 300,
-  /** 여러 장 — 긴 변 상한 */
-  maxLongMulti: 158,
-  bottomGap: 16,
-} as const;
 
 /** 사진 수에 따른 행 패턴 (2+1, 2×2 등) */
 function rowPattern(count: number): number[][] {
@@ -74,8 +64,7 @@ function scalePhoto(
 }
 
 function frameSize(photoW: number, photoH: number): { frameW: number; frameH: number } {
-  const pad = STICKER.padding * 2;
-  return { frameW: photoW + pad, frameH: photoH + pad };
+  return { frameW: photoW, frameH: photoH };
 }
 
 interface RowItem {
@@ -90,7 +79,7 @@ function fitRowItems(
   items: RowItem[],
   usableWidth: number,
 ): RowItem[] {
-  const gap = STICKER.gap;
+  const gap = PHOTO_FRAME.gap;
   const total =
     items.reduce((sum, item) => sum + item.frameW, 0) + gap * (items.length - 1);
 
@@ -114,7 +103,9 @@ function fitRowItems(
 export function layoutStickerCollage(
   items: StickerItem[],
   usableWidth: number,
-  options: { maxLongEdge: number; maxPhotoH?: number } = { maxLongEdge: STICKER.maxLongMulti },
+  options: { maxLongEdge: number; maxPhotoH?: number } = {
+    maxLongEdge: PHOTO_FRAME.maxLongMulti,
+  },
 ): StickerCollage {
   if (items.length === 0) {
     return { placements: [], totalHeight: 0 };
@@ -129,9 +120,8 @@ export function layoutStickerCollage(
     const indices = pattern[r];
     const maxPhotoW =
       indices.length === 1
-        ? usableWidth - STICKER.padding * 2
-        : (usableWidth - STICKER.gap * (indices.length - 1)) / indices.length -
-          STICKER.padding * 2;
+        ? usableWidth
+        : (usableWidth - PHOTO_FRAME.gap * (indices.length - 1)) / indices.length;
 
     let rowItems: RowItem[] = indices.map((index) => {
       const item = items.find((i) => i.index === index)!;
@@ -149,7 +139,7 @@ export function layoutStickerCollage(
 
     const rowWidth =
       rowItems.reduce((sum, item) => sum + item.frameW, 0) +
-      STICKER.gap * (rowItems.length - 1);
+      PHOTO_FRAME.gap * (rowItems.length - 1);
     const rowHeight = Math.max(...rowItems.map((item) => item.frameH));
     let cursorX = (usableWidth - rowWidth) / 2;
 
@@ -164,14 +154,14 @@ export function layoutStickerCollage(
         frameW: item.frameW,
         frameH: item.frameH,
       });
-      cursorX += item.frameW + STICKER.gap;
+      cursorX += item.frameW + PHOTO_FRAME.gap;
     }
 
     cursorY += rowHeight;
-    if (r < pattern.length - 1) cursorY += STICKER.rowGap;
+    if (r < pattern.length - 1) cursorY += PHOTO_FRAME.rowGap;
   }
 
-  return { placements, totalHeight: cursorY + STICKER.bottomGap };
+  return { placements, totalHeight: cursorY + PHOTO_FRAME.bottomGap };
 }
 
 /** 메타 없을 때(페이지 높이 추정) — 정사각형 가정 */

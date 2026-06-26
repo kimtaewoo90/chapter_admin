@@ -11,9 +11,11 @@ import {
   TextStyle,
 } from './types';
 import {
-  STICKER,
   estimateCollageHeight,
 } from './stickerCollage';
+import {
+  PHOTO_FRAME,
+} from '../pdf/photoStyle';
 
 /**
  * Layout Engine
@@ -116,7 +118,7 @@ function photoAreaHeight(plan: LayoutPlan, photoCount: number): number {
   if (photoCount === 0 || plan.type === 'text-only') return 0;
 
   const maxLong =
-    photoCount === 1 ? STICKER.maxLongSingle : STICKER.maxLongMulti;
+    photoCount === 1 ? PHOTO_FRAME.maxLongSingle : PHOTO_FRAME.maxLongMulti;
 
   return estimateCollageHeight(photoCount, CONTENT_WIDTH, maxLong);
 }

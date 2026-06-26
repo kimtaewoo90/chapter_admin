@@ -6,11 +6,11 @@ import PDFDocument from 'pdfkit';
 
 import { planBookPages } from '../layout/engine';
 import {
-  STICKER,
   StickerItem,
   layoutStickerCollage,
 } from '../layout/stickerCollage';
 import { fitImageSize, prepareImage, PreparedImage } from './imagePrep';
+import { PHOTO_FRAME } from './photoStyle';
 import { BookPagePlan, DiaryEntry, LayoutPlan } from '../layout/types';
 
 const PAGE = { width: 420, height: 595, margin: 48 };
@@ -80,7 +80,8 @@ function contentWidth(): number {
   return PAGE.width - PAGE.margin * 2;
 }
 
-function drawSticker(
+/** Chapter 브랜드 — 테두리 없음, 살짝 둥근 모서리만 */
+function drawChapterPhoto(
   doc: PDFKit.PDFDocument,
   prepared: PreparedImage,
   x: number,
@@ -89,28 +90,13 @@ function drawSticker(
   slotH: number,
 ): void {
   const fitted = fitImageSize(prepared, slotW, slotH);
-  const pad = STICKER.padding;
-  const frameW = slotW + pad * 2;
-  const frameH = slotH + pad * 2;
+  const imgX = x + (slotW - fitted.width) / 2;
+  const imgY = y + (slotH - fitted.height) / 2;
 
   doc.save();
-  doc.fillColor('#00000010');
-  doc.roundedRect(x + 2, y + 2, frameW, frameH, STICKER.radius).fill();
-  doc.restore();
-
-  doc.save();
-  doc.roundedRect(x, y, frameW, frameH, STICKER.radius).fill('#ffffff');
-  doc.restore();
-  doc
-    .roundedRect(x, y, frameW, frameH, STICKER.radius)
-    .lineWidth(0.5)
-    .strokeColor(COLORS.line)
-    .stroke();
-
-  const imgX = x + pad + (slotW - fitted.width) / 2;
-  const imgY = y + pad + (slotH - fitted.height) / 2;
-
+  doc.roundedRect(imgX, imgY, fitted.width, fitted.height, PHOTO_FRAME.radius).clip();
   doc.image(prepared.buffer, imgX, imgY, { width: fitted.width });
+  doc.restore();
 }
 
 function drawPhotoSection(
@@ -134,7 +120,7 @@ function drawPhotoSection(
   }
 
   const maxLong =
-    photoCount === 1 ? STICKER.maxLongSingle : STICKER.maxLongMulti;
+    photoCount === 1 ? PHOTO_FRAME.maxLongSingle : PHOTO_FRAME.maxLongMulti;
   const collage = layoutStickerCollage(stickerItems, usableWidth, {
     maxLongEdge: maxLong,
   });
@@ -145,7 +131,7 @@ function drawPhotoSection(
     const prepared = images.get(placement.index);
 
     if (prepared) {
-      drawSticker(
+      drawChapterPhoto(
         doc,
         prepared,
         x,
@@ -322,11 +308,8 @@ function drawPlaceholder(
   height: number,
   fontPath: string | null,
 ): void {
-  doc.save();
-  doc.roundedRect(x, y, width, height, STICKER.radius).fill('#ffffff');
-  doc.restore();
   doc
-    .roundedRect(x, y, width, height, STICKER.radius)
+    .roundedRect(x, y, width, height, PHOTO_FRAME.radius)
     .lineWidth(0.5)
     .strokeColor(COLORS.line)
     .stroke();
