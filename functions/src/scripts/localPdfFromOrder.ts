@@ -4,12 +4,12 @@
  * 실행: npm run pdf:order -- <orderId>
  */
 import { execSync } from 'node:child_process';
-import fs from 'node:fs';
 import path from 'node:path';
 
 import { parseOrderEntries } from '../layout/engine';
 import { generateBookPdf } from '../pdf/generator';
 import { decodeFirestoreDocument } from './firestoreRest';
+import { writeOutputPdf } from './writeOutputPdf';
 
 const PROJECT_ID = 'chapter-cc187';
 const API_KEY = 'AIzaSyB7TS-Fk60oI_-HR7aYvXE0k0nNYha41ww';
@@ -66,10 +66,10 @@ async function main() {
   const pdfBuffer = await generateBookPdf(entries, bookTitle);
 
   const outDir = path.join(__dirname, '..', '..', 'output');
-  fs.mkdirSync(outDir, { recursive: true });
-
-  const outPath = path.join(outDir, `${orderId}.pdf`);
-  fs.writeFileSync(outPath, pdfBuffer);
+  const outPath = writeOutputPdf(
+    path.join(outDir, `${orderId}.pdf`),
+    pdfBuffer,
+  );
 
   console.log(`✅ PDF 생성 완료!`);
   console.log(`   ${outPath}`);

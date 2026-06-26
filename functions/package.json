@@ -6,7 +6,7 @@
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions",
-    "test": "npm run build && node --test lib/layout/engine.test.js",
+    "test": "npm run build && node --test lib/layout/engine.test.js lib/layout/stickerCollage.test.js",
     "pdf:local": "npm run build && node lib/scripts/localPdfTest.js",
     "pdf:order": "npm run build && node lib/scripts/localPdfFromOrder.js"
   },
@@ -17,7 +17,8 @@
   "dependencies": {
     "firebase-admin": "^13.0.2",
     "firebase-functions": "^6.3.2",
-    "pdfkit": "^0.16.0"
+    "pdfkit": "^0.16.0",
+    "sharp": "^0.35.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

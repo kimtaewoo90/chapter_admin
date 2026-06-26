@@ -1,11 +1,19 @@
 import {
+  BookPagePlan,
   DiaryEntry,
+  EntryLayout,
   LayoutPlan,
   LayoutType,
   LAYOUT_THRESHOLDS,
+  PageItem,
+  PageMode,
   PhotoSlot,
   TextStyle,
 } from './types';
+import {
+  STICKER,
+  estimateCollageHeight,
+} from './stickerCollage';
 
 /**
  * Layout Engine
@@ -23,6 +31,7 @@ export function decideLayout(entry: DiaryEntry): LayoutPlan {
   const type = pickLayoutType(photoCount, textLength);
   const textStyle = pickTextStyle(type, textLength);
   const { gridColumns, gridRows, photoSlots } = buildPhotoSlots(type, photoCount);
+  const pageMode = decidePageMode(photoCount, textLength, type);
 
   return {
     type,
@@ -30,7 +39,127 @@ export function decideLayout(entry: DiaryEntry): LayoutPlan {
     textStyle,
     gridColumns,
     gridRows,
+    pageMode,
   };
+}
+
+/** 사진 없고 글 짧으면 compact — 한 페이지에 여러 개 묶음 */
+export function decidePageMode(
+  photoCount: number,
+  textLength: number,
+  type: LayoutType = pickLayoutType(photoCount, textLength),
+): PageMode {
+  if (type !== 'text-only') return 'full';
+  if (textLength >= LAYOUT_THRESHOLDS.longText) return 'full';
+  if (textLength <= LAYOUT_THRESHOLDS.compactTextMax) return 'compact';
+  return 'full';
+}
+
+/** PDF 페이지 단위 배치 — 빈 공간이 있으면 compact를 full 아래에 이어 붙임 */
+export function planBookPages(entries: DiaryEntry[]): BookPagePlan[] {
+  const pages: BookPagePlan[] = [];
+  let currentItems: PageItem[] = [];
+  let usedHeight = 0;
+
+  const flush = () => {
+    if (currentItems.length > 0) {
+      pages.push({ items: currentItems });
+      currentItems = [];
+      usedHeight = 0;
+    }
+  };
+
+  const tryAdd = (item: PageItem): boolean => {
+    const height = estimateItemHeight(item);
+    const gap = currentItems.length > 0 ? LAYOUT_THRESHOLDS.itemGap : 0;
+
+    if (usedHeight + gap + height > LAYOUT_THRESHOLDS.pageContentHeight) {
+      return false;
+    }
+
+    currentItems.push(item);
+    usedHeight += gap + height;
+    return true;
+  };
+
+  const forceAdd = (item: PageItem) => {
+    const height = estimateItemHeight(item);
+    currentItems.push(item);
+    usedHeight = height;
+  };
+
+  for (const entry of entries) {
+    const plan = decideLayout(entry);
+    const layout: EntryLayout = { entry, plan };
+    const item: PageItem =
+      plan.pageMode === 'full'
+        ? { kind: 'full', layout }
+        : { kind: 'compact', layout };
+
+    if (!tryAdd(item)) {
+      flush();
+      if (!tryAdd(item)) {
+        // 긴 글 등 한 페이지를 넘기는 full 항목
+        forceAdd(item);
+        flush();
+      }
+    }
+  }
+
+  flush();
+  return pages;
+}
+
+const CONTENT_WIDTH = 420 - 48 * 2;
+
+function photoAreaHeight(plan: LayoutPlan, photoCount: number): number {
+  if (photoCount === 0 || plan.type === 'text-only') return 0;
+
+  const maxLong =
+    photoCount === 1 ? STICKER.maxLongSingle : STICKER.maxLongMulti;
+
+  return estimateCollageHeight(photoCount, CONTENT_WIDTH, maxLong);
+}
+
+function estimateFullHeight(entry: DiaryEntry, plan: LayoutPlan): number {
+  const titleLines = Math.ceil((entry.title.length || 8) / 24);
+  const bodyLines = Math.max(
+    1,
+    Math.ceil(entry.body.length / (plan.textStyle === 'caption' ? 40 : 32)),
+  );
+  const bodyLineHeight = plan.textStyle === 'caption' ? 12 : 14;
+
+  let height = 18; // 날짜
+  height += titleLines * 18 + 16; // 제목 + 여백
+  height += 14; // 구분선
+
+  const photos = photoAreaHeight(plan, entry.photoUrls.length);
+  if (photos > 0) height += photos + 16;
+
+  height += bodyLines * bodyLineHeight + 8;
+  return height;
+}
+
+function estimateCompactHeight(entry: DiaryEntry): number {
+  const titleLines = Math.ceil((entry.title.length || 8) / 24);
+  const bodyLines = Math.max(0, Math.ceil(entry.body.length / 32));
+
+  let height = 18; // 날짜
+  height += titleLines * 18 + 16; // 제목
+  height += 14; // 구분선
+
+  if (entry.body.length > 0) {
+    height += Math.max(1, bodyLines) * 14 + 8;
+  }
+
+  return height;
+}
+
+function estimateItemHeight(item: PageItem): number {
+  if (item.kind === 'compact') {
+    return estimateCompactHeight(item.layout.entry);
+  }
+  return estimateFullHeight(item.layout.entry, item.layout.plan);
 }
 
 function pickLayoutType(photoCount: number, textLength: number): LayoutType {

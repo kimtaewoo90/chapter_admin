@@ -4,12 +4,12 @@
  * 실행: npm run pdf:local
  * 결과: output/sample.pdf
  */
-import fs from 'node:fs';
 import path from 'node:path';
 
 import { parseSnapshotEntries } from '../layout/engine';
 import { generateBookPdf } from '../pdf/generator';
 import { buildTestOrderDocument } from '../orders/testOrderData';
+import { writeOutputPdf } from './writeOutputPdf';
 
 async function main() {
   const order = buildTestOrderDocument();
@@ -22,10 +22,7 @@ async function main() {
   const pdfBuffer = await generateBookPdf(entries, order.bookTitle);
 
   const outDir = path.join(__dirname, '..', '..', 'output');
-  fs.mkdirSync(outDir, { recursive: true });
-
-  const outPath = path.join(outDir, 'sample.pdf');
-  fs.writeFileSync(outPath, pdfBuffer);
+  const outPath = writeOutputPdf(path.join(outDir, 'sample.pdf'), pdfBuffer);
 
   console.log(`✅ PDF 생성 완료!`);
   console.log(`   ${outPath}`);

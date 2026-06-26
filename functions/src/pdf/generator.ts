@@ -4,8 +4,14 @@ import path from 'node:path';
 
 import PDFDocument from 'pdfkit';
 
-import { decideLayout } from '../layout/engine';
-import { DiaryEntry, LayoutPlan } from '../layout/types';
+import { planBookPages } from '../layout/engine';
+import {
+  STICKER,
+  StickerItem,
+  layoutStickerCollage,
+} from '../layout/stickerCollage';
+import { fitImageSize, prepareImage, PreparedImage } from './imagePrep';
+import { BookPagePlan, DiaryEntry, LayoutPlan } from '../layout/types';
 
 const PAGE = { width: 420, height: 595, margin: 48 };
 
@@ -21,15 +27,13 @@ const COLORS = {
   muted: '#999999',
   line: '#e8e8e8',
   placeholder: '#cccccc',
+  cardBg: '#fafafa',
 };
 
 let cachedFontPath: string | null | undefined;
 
-/** Noto Sans CJK KR — 한글 PDF용 (최초 1회 다운로드 후 캐시) */
 async function ensureKoreanFont(): Promise<string | null> {
-  if (cachedFontPath !== undefined) {
-    return cachedFontPath;
-  }
+  if (cachedFontPath !== undefined) return cachedFontPath;
 
   const cachePath = path.join(os.tmpdir(), 'chapter-noto-sans-kr.otf');
   if (fs.existsSync(cachePath)) {
@@ -41,12 +45,11 @@ async function ensureKoreanFont(): Promise<string | null> {
     try {
       const response = await fetch(url);
       if (!response.ok) continue;
-      const buffer = Buffer.from(await response.arrayBuffer());
-      fs.writeFileSync(cachePath, buffer);
+      fs.writeFileSync(cachePath, Buffer.from(await response.arrayBuffer()));
       cachedFontPath = cachePath;
       return cachePath;
     } catch {
-      // 다음 URL 시도
+      // 다음 URL
     }
   }
 
@@ -69,15 +72,100 @@ function setFont(
   fontPath: string | null,
   weight: 'regular' | 'bold',
 ) {
-  if (fontPath) {
-    doc.font(fontPath);
-  } else {
-    doc.font(weight === 'bold' ? 'Helvetica-Bold' : 'Helvetica');
-  }
+  if (fontPath) doc.font(fontPath);
+  else doc.font(weight === 'bold' ? 'Helvetica-Bold' : 'Helvetica');
 }
 
 function contentWidth(): number {
   return PAGE.width - PAGE.margin * 2;
+}
+
+function drawSticker(
+  doc: PDFKit.PDFDocument,
+  prepared: PreparedImage,
+  x: number,
+  y: number,
+  slotW: number,
+  slotH: number,
+): void {
+  const fitted = fitImageSize(prepared, slotW, slotH);
+  const pad = STICKER.padding;
+  const frameW = slotW + pad * 2;
+  const frameH = slotH + pad * 2;
+
+  doc.save();
+  doc.fillColor('#00000010');
+  doc.roundedRect(x + 2, y + 2, frameW, frameH, STICKER.radius).fill();
+  doc.restore();
+
+  doc.save();
+  doc.roundedRect(x, y, frameW, frameH, STICKER.radius).fill('#ffffff');
+  doc.restore();
+  doc
+    .roundedRect(x, y, frameW, frameH, STICKER.radius)
+    .lineWidth(0.5)
+    .strokeColor(COLORS.line)
+    .stroke();
+
+  const imgX = x + pad + (slotW - fitted.width) / 2;
+  const imgY = y + pad + (slotH - fitted.height) / 2;
+
+  doc.image(prepared.buffer, imgX, imgY, { width: fitted.width });
+}
+
+function drawPhotoSection(
+  doc: PDFKit.PDFDocument,
+  entry: DiaryEntry,
+  images: Map<number, PreparedImage>,
+  fontPath: string | null,
+  startY: number,
+  usableWidth: number,
+): number {
+  const photoCount = entry.photoUrls.length;
+  if (photoCount === 0) return startY;
+
+  const stickerItems: StickerItem[] = [];
+  for (let i = 0; i < photoCount; i++) {
+    const prepared = images.get(i);
+    stickerItems.push({
+      index: i,
+      meta: prepared ?? { width: 4, height: 3 },
+    });
+  }
+
+  const maxLong =
+    photoCount === 1 ? STICKER.maxLongSingle : STICKER.maxLongMulti;
+  const collage = layoutStickerCollage(stickerItems, usableWidth, {
+    maxLongEdge: maxLong,
+  });
+
+  for (const placement of collage.placements) {
+    const x = PAGE.margin + placement.x;
+    const y = startY + placement.y;
+    const prepared = images.get(placement.index);
+
+    if (prepared) {
+      drawSticker(
+        doc,
+        prepared,
+        x,
+        y,
+        placement.photoW,
+        placement.photoH,
+      );
+    } else {
+      drawPlaceholder(
+        doc,
+        x,
+        y,
+        placement.frameW,
+        placement.frameH,
+        fontPath,
+      );
+    }
+  }
+
+  return startY + collage.totalHeight;
 }
 
 function drawCoverPage(
@@ -109,73 +197,76 @@ function drawCoverPage(
   });
 }
 
-function drawEntryPage(
+const ENTRY_STYLE = {
+  dateSize: 10,
+  titleSize: 16,
+  bodySize: 11,
+  dateGap: 8,
+  titleGap: 16,
+  dividerGap: 14,
+  entryGap: 32,
+};
+
+function drawEntryHeader(
+  doc: PDFKit.PDFDocument,
+  entry: DiaryEntry,
+  fontPath: string | null,
+  x: number,
+  y: number,
+  width: number,
+): number {
+  let cursorY = y;
+
+  if (entry.date) {
+    setFont(doc, fontPath, 'regular');
+    doc.fontSize(ENTRY_STYLE.dateSize).fillColor(COLORS.muted);
+    doc.text(entry.date, x, cursorY, { width });
+    cursorY = doc.y + ENTRY_STYLE.dateGap;
+  }
+
+  setFont(doc, fontPath, 'bold');
+  doc.fontSize(ENTRY_STYLE.titleSize).fillColor(COLORS.title);
+  doc.text(entry.title || entry.date, x, cursorY, { width });
+  cursorY = doc.y + ENTRY_STYLE.titleGap;
+
+  doc
+    .moveTo(x, cursorY)
+    .lineTo(x + width, cursorY)
+    .strokeColor(COLORS.line)
+    .lineWidth(0.5)
+    .stroke();
+
+  return cursorY + ENTRY_STYLE.dividerGap;
+}
+
+/** 사진·긴 글 */
+function drawFullEntry(
   doc: PDFKit.PDFDocument,
   entry: DiaryEntry,
   plan: LayoutPlan,
   fontPath: string | null,
-  imageBuffers: Map<number, Buffer>,
-): void {
+  imageBuffers: Map<number, PreparedImage>,
+  startY: number,
+): number {
   const usableWidth = contentWidth();
-  let cursorY = PAGE.margin;
+  let cursorY = drawEntryHeader(
+    doc,
+    entry,
+    fontPath,
+    PAGE.margin,
+    startY,
+    usableWidth,
+  );
 
-  if (entry.date) {
-    setFont(doc, fontPath, 'regular');
-    doc.fontSize(10).fillColor(COLORS.muted);
-    doc.text(entry.date, PAGE.margin, cursorY, { width: usableWidth });
-    cursorY = doc.y + 10;
-  }
-
-  setFont(doc, fontPath, 'bold');
-  doc.fontSize(16).fillColor(COLORS.title);
-  doc.text(entry.title || entry.date, PAGE.margin, cursorY, { width: usableWidth });
-  cursorY = doc.y + 20;
-
-  doc
-    .moveTo(PAGE.margin, cursorY)
-    .lineTo(PAGE.width - PAGE.margin, cursorY)
-    .strokeColor(COLORS.line)
-    .lineWidth(0.5)
-    .stroke();
-  cursorY += 16;
-
-  const photoAreaHeight = plan.type === 'text-only' ? 0 : 200;
-  const gap = 8;
-
-  if (plan.photoSlots.length > 0) {
-    const cellWidth =
-      (usableWidth - gap * (plan.gridColumns - 1)) / plan.gridColumns;
-    const cellHeight =
-      (photoAreaHeight - gap * (plan.gridRows - 1)) / plan.gridRows;
-
-    for (const slot of plan.photoSlots) {
-      const x = PAGE.margin + slot.col * (cellWidth + gap);
-      const y = cursorY + slot.row * (cellHeight + gap);
-      const width = cellWidth * slot.colSpan + gap * (slot.colSpan - 1);
-      const buffer = imageBuffers.get(slot.index);
-
-      doc.save();
-      doc.roundedRect(x, y, width, cellHeight, 6).fill('#fafafa');
-      doc.roundedRect(x, y, width, cellHeight, 6).stroke(COLORS.line);
-
-      if (buffer) {
-        try {
-          doc.image(buffer, x + 3, y + 3, {
-            fit: [width - 6, cellHeight - 6],
-            align: 'center',
-            valign: 'center',
-          });
-        } catch {
-          drawPlaceholder(doc, x, y, width, cellHeight, fontPath);
-        }
-      } else {
-        drawPlaceholder(doc, x, y, width, cellHeight, fontPath);
-      }
-
-      doc.restore();
-    }
-
-    cursorY += photoAreaHeight + 20;
+  if (entry.photoUrls.length > 0) {
+    cursorY = drawPhotoSection(
+      doc,
+      entry,
+      imageBuffers,
+      fontPath,
+      cursorY,
+      usableWidth,
+    );
   }
 
   if (entry.body.length > 0) {
@@ -187,7 +278,40 @@ function drawEntryPage(
       lineGap: plan.textStyle === 'full' ? 6 : 3,
       align: plan.textStyle === 'caption' ? 'center' : 'left',
     });
+    cursorY = doc.y + 8;
   }
+
+  return cursorY;
+}
+
+/** 짧은 글 — 사진 있는 날과 동일한 헤더 + 본문 */
+function drawCompactEntry(
+  doc: PDFKit.PDFDocument,
+  entry: DiaryEntry,
+  fontPath: string | null,
+  startY: number,
+): number {
+  const usableWidth = contentWidth();
+  let cursorY = drawEntryHeader(
+    doc,
+    entry,
+    fontPath,
+    PAGE.margin,
+    startY,
+    usableWidth,
+  );
+
+  if (entry.body.length > 0) {
+    setFont(doc, fontPath, 'regular');
+    doc.fontSize(ENTRY_STYLE.bodySize).fillColor(COLORS.body);
+    doc.text(entry.body, PAGE.margin, cursorY, {
+      width: usableWidth,
+      lineGap: 4,
+    });
+    cursorY = doc.y + 8;
+  }
+
+  return cursorY;
 }
 
 function drawPlaceholder(
@@ -198,9 +322,51 @@ function drawPlaceholder(
   height: number,
   fontPath: string | null,
 ): void {
+  doc.save();
+  doc.roundedRect(x, y, width, height, STICKER.radius).fill('#ffffff');
+  doc.restore();
+  doc
+    .roundedRect(x, y, width, height, STICKER.radius)
+    .lineWidth(0.5)
+    .strokeColor(COLORS.line)
+    .stroke();
   setFont(doc, fontPath, 'regular');
   doc.fontSize(9).fillColor(COLORS.placeholder);
   doc.text('사진', x, y + height / 2 - 5, { width, align: 'center' });
+}
+
+async function loadImages(entry: DiaryEntry): Promise<Map<number, PreparedImage>> {
+  const images = new Map<number, PreparedImage>();
+  await Promise.all(
+    entry.photoUrls.map(async (url, index) => {
+      const raw = await fetchImageBuffer(url);
+      if (!raw) return;
+      const prepared = await prepareImage(raw);
+      if (prepared) images.set(index, prepared);
+    }),
+  );
+  return images;
+}
+
+async function renderPage(
+  doc: PDFKit.PDFDocument,
+  pagePlan: BookPagePlan,
+  fontPath: string | null,
+): Promise<void> {
+  let cursorY = PAGE.margin;
+
+  for (let i = 0; i < pagePlan.items.length; i++) {
+    const item = pagePlan.items[i];
+    if (i > 0) cursorY += ENTRY_STYLE.entryGap;
+
+    if (item.kind === 'full') {
+      const { entry, plan } = item.layout;
+      const images = await loadImages(entry);
+      cursorY = drawFullEntry(doc, entry, plan, fontPath, images, cursorY);
+    } else {
+      cursorY = drawCompactEntry(doc, item.layout.entry, fontPath, cursorY);
+    }
+  }
 }
 
 /** 주문 스냅샷 엔트리들로 책 PDF 생성 */
@@ -209,6 +375,7 @@ export async function generateBookPdf(
   bookTitle: string,
 ): Promise<Buffer> {
   const fontPath = await ensureKoreanFont();
+  const pagePlans = planBookPages(entries);
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
@@ -226,7 +393,7 @@ export async function generateBookPdf(
       try {
         drawCoverPage(doc, bookTitle, fontPath);
 
-        if (entries.length === 0) {
+        if (pagePlans.length === 0) {
           setFont(doc, fontPath, 'regular');
           doc.fontSize(12).fillColor(COLORS.subtitle);
           doc.text('스냅샷에 일기가 없습니다.', PAGE.margin, PAGE.height * 0.5, {
@@ -237,19 +404,9 @@ export async function generateBookPdf(
           return;
         }
 
-        for (const entry of entries) {
+        for (const pagePlan of pagePlans) {
           doc.addPage();
-
-          const plan = decideLayout(entry);
-          const imageBuffers = new Map<number, Buffer>();
-          await Promise.all(
-            entry.photoUrls.map(async (url, index) => {
-              const buffer = await fetchImageBuffer(url);
-              if (buffer) imageBuffers.set(index, buffer);
-            }),
-          );
-
-          drawEntryPage(doc, entry, plan, fontPath, imageBuffers);
+          await renderPage(doc, pagePlan, fontPath);
         }
 
         doc.end();
