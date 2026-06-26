@@ -178,3 +178,22 @@ export function parseSnapshotEntries(
     .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
     .map((item) => parseDiaryEntry(item));
 }
+
+/** 주문 문서에서 일기 목록 추출 (snapshot.entries / snapshots[] 모두 지원) */
+export function parseOrderEntries(
+  order: Record<string, unknown>,
+): DiaryEntry[] {
+  const fromNested = parseSnapshotEntries(
+    order.snapshot as Record<string, unknown> | undefined,
+  );
+  if (fromNested.length > 0) return fromNested;
+
+  const snapshots = order.snapshots;
+  if (Array.isArray(snapshots)) {
+    return snapshots
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+      .map((item) => parseDiaryEntry(item));
+  }
+
+  return [];
+}

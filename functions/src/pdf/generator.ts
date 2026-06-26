@@ -7,34 +7,51 @@ import PDFDocument from 'pdfkit';
 import { decideLayout } from '../layout/engine';
 import { DiaryEntry, LayoutPlan } from '../layout/types';
 
-const PAGE = { width: 420, height: 595, margin: 40 }; // A5-ish (pt)
+const PAGE = { width: 420, height: 595, margin: 48 };
 
-const NOTO_FONT_URL =
-  'https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf';
+const NOTO_FONT_URLS = [
+  'https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf',
+  'https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk@main/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf',
+];
 
-let cachedFontPath: string | null = null;
+const COLORS = {
+  title: '#1a1a1a',
+  subtitle: '#6b6b6b',
+  body: '#2d2d2d',
+  muted: '#999999',
+  line: '#e8e8e8',
+  placeholder: '#cccccc',
+};
 
+let cachedFontPath: string | null | undefined;
+
+/** Noto Sans CJK KR — 한글 PDF용 (최초 1회 다운로드 후 캐시) */
 async function ensureKoreanFont(): Promise<string | null> {
-  if (cachedFontPath && fs.existsSync(cachedFontPath)) {
+  if (cachedFontPath !== undefined) {
     return cachedFontPath;
   }
 
-  const fontPath = path.join(os.tmpdir(), 'chapter-noto-sans-kr.otf');
-  if (fs.existsSync(fontPath)) {
-    cachedFontPath = fontPath;
-    return fontPath;
+  const cachePath = path.join(os.tmpdir(), 'chapter-noto-sans-kr.otf');
+  if (fs.existsSync(cachePath)) {
+    cachedFontPath = cachePath;
+    return cachePath;
   }
 
-  try {
-    const response = await fetch(NOTO_FONT_URL);
-    if (!response.ok) return null;
-    const buffer = Buffer.from(await response.arrayBuffer());
-    fs.writeFileSync(fontPath, buffer);
-    cachedFontPath = fontPath;
-    return fontPath;
-  } catch {
-    return null;
+  for (const url of NOTO_FONT_URLS) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) continue;
+      const buffer = Buffer.from(await response.arrayBuffer());
+      fs.writeFileSync(cachePath, buffer);
+      cachedFontPath = cachePath;
+      return cachePath;
+    } catch {
+      // 다음 URL 시도
+    }
   }
+
+  cachedFontPath = null;
+  return null;
 }
 
 async function fetchImageBuffer(url: string): Promise<Buffer | null> {
@@ -47,16 +64,49 @@ async function fetchImageBuffer(url: string): Promise<Buffer | null> {
   }
 }
 
-function applyFont(doc: PDFKit.PDFDocument, fontPath: string | null, bold = false) {
+function setFont(
+  doc: PDFKit.PDFDocument,
+  fontPath: string | null,
+  weight: 'regular' | 'bold',
+) {
   if (fontPath) {
     doc.font(fontPath);
   } else {
-    doc.font(bold ? 'Helvetica-Bold' : 'Helvetica');
+    doc.font(weight === 'bold' ? 'Helvetica-Bold' : 'Helvetica');
   }
 }
 
 function contentWidth(): number {
   return PAGE.width - PAGE.margin * 2;
+}
+
+function drawCoverPage(
+  doc: PDFKit.PDFDocument,
+  bookTitle: string,
+  fontPath: string | null,
+): void {
+  const centerY = PAGE.height * 0.38;
+
+  doc
+    .moveTo(PAGE.margin + 40, centerY + 50)
+    .lineTo(PAGE.width - PAGE.margin - 40, centerY + 50)
+    .strokeColor(COLORS.line)
+    .lineWidth(0.5)
+    .stroke();
+
+  setFont(doc, fontPath, 'bold');
+  doc.fontSize(24).fillColor(COLORS.title);
+  doc.text(bookTitle, PAGE.margin, centerY - 20, {
+    width: contentWidth(),
+    align: 'center',
+  });
+
+  setFont(doc, fontPath, 'regular');
+  doc.fontSize(11).fillColor(COLORS.subtitle);
+  doc.text('Chapter', PAGE.margin, centerY + 64, {
+    width: contentWidth(),
+    align: 'center',
+  });
 }
 
 function drawEntryPage(
@@ -69,22 +119,28 @@ function drawEntryPage(
   const usableWidth = contentWidth();
   let cursorY = PAGE.margin;
 
-  applyFont(doc, fontPath, true);
-  doc.fontSize(14).fillColor('#222222');
-  doc.text(entry.title || entry.date, PAGE.margin, cursorY, { width: usableWidth });
-  cursorY = doc.y + 8;
-
-  if (entry.date && entry.title !== entry.date) {
-    applyFont(doc, fontPath);
-    doc.fontSize(9).fillColor('#888888');
+  if (entry.date) {
+    setFont(doc, fontPath, 'regular');
+    doc.fontSize(10).fillColor(COLORS.muted);
     doc.text(entry.date, PAGE.margin, cursorY, { width: usableWidth });
-    cursorY = doc.y + 12;
-  } else {
-    cursorY += 4;
+    cursorY = doc.y + 10;
   }
 
-  const photoAreaHeight = plan.type === 'text-only' ? 0 : 220;
-  const gap = 10;
+  setFont(doc, fontPath, 'bold');
+  doc.fontSize(16).fillColor(COLORS.title);
+  doc.text(entry.title || entry.date, PAGE.margin, cursorY, { width: usableWidth });
+  cursorY = doc.y + 20;
+
+  doc
+    .moveTo(PAGE.margin, cursorY)
+    .lineTo(PAGE.width - PAGE.margin, cursorY)
+    .strokeColor(COLORS.line)
+    .lineWidth(0.5)
+    .stroke();
+  cursorY += 16;
+
+  const photoAreaHeight = plan.type === 'text-only' ? 0 : 200;
+  const gap = 8;
 
   if (plan.photoSlots.length > 0) {
     const cellWidth =
@@ -99,12 +155,13 @@ function drawEntryPage(
       const buffer = imageBuffers.get(slot.index);
 
       doc.save();
-      doc.roundedRect(x, y, width, cellHeight, 4).stroke('#dddddd');
+      doc.roundedRect(x, y, width, cellHeight, 6).fill('#fafafa');
+      doc.roundedRect(x, y, width, cellHeight, 6).stroke(COLORS.line);
 
       if (buffer) {
         try {
-          doc.image(buffer, x + 2, y + 2, {
-            fit: [width - 4, cellHeight - 4],
+          doc.image(buffer, x + 3, y + 3, {
+            fit: [width - 6, cellHeight - 6],
             align: 'center',
             valign: 'center',
           });
@@ -118,17 +175,17 @@ function drawEntryPage(
       doc.restore();
     }
 
-    cursorY += photoAreaHeight + 16;
+    cursorY += photoAreaHeight + 20;
   }
 
   if (entry.body.length > 0) {
-    applyFont(doc, fontPath);
-    const fontSize =
-      plan.textStyle === 'caption' ? 10 : plan.textStyle === 'short' ? 11 : 11;
-    doc.fontSize(fontSize).fillColor('#333333');
+    setFont(doc, fontPath, 'regular');
+    const fontSize = plan.textStyle === 'caption' ? 10 : 11;
+    doc.fontSize(fontSize).fillColor(COLORS.body);
     doc.text(entry.body, PAGE.margin, cursorY, {
       width: usableWidth,
-      lineGap: plan.textStyle === 'full' ? 4 : 2,
+      lineGap: plan.textStyle === 'full' ? 6 : 3,
+      align: plan.textStyle === 'caption' ? 'center' : 'left',
     });
   }
 }
@@ -141,9 +198,9 @@ function drawPlaceholder(
   height: number,
   fontPath: string | null,
 ): void {
-  applyFont(doc, fontPath);
-  doc.fontSize(9).fillColor('#bbbbbb');
-  doc.text('사진', x, y + height / 2 - 6, { width, align: 'center' });
+  setFont(doc, fontPath, 'regular');
+  doc.fontSize(9).fillColor(COLORS.placeholder);
+  doc.text('사진', x, y + height / 2 - 5, { width, align: 'center' });
 }
 
 /** 주문 스냅샷 엔트리들로 책 PDF 생성 */
@@ -167,25 +224,23 @@ export async function generateBookPdf(
 
     void (async () => {
       try {
-        applyFont(doc, fontPath, true);
-        doc.fontSize(22).fillColor('#111111');
-        doc.text(bookTitle, { align: 'center' });
-        doc.moveDown(2);
+        drawCoverPage(doc, bookTitle, fontPath);
 
         if (entries.length === 0) {
-          applyFont(doc, fontPath);
-          doc.fontSize(12).fillColor('#666666');
-          doc.text('스냅샷에 일기가 없습니다.', { align: 'center' });
+          setFont(doc, fontPath, 'regular');
+          doc.fontSize(12).fillColor(COLORS.subtitle);
+          doc.text('스냅샷에 일기가 없습니다.', PAGE.margin, PAGE.height * 0.5, {
+            width: contentWidth(),
+            align: 'center',
+          });
           doc.end();
           return;
         }
 
-        for (let i = 0; i < entries.length; i++) {
-          if (i > 0) doc.addPage();
+        for (const entry of entries) {
+          doc.addPage();
 
-          const entry = entries[i];
           const plan = decideLayout(entry);
-
           const imageBuffers = new Map<number, Buffer>();
           await Promise.all(
             entry.photoUrls.map(async (url, index) => {
