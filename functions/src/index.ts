@@ -6,7 +6,11 @@ import { logger } from 'firebase-functions';
 import { generatePdfForOrder } from './orders/generatePdf';
 import { seedTestOrder } from './orders/seedTestOrder';
 
-initializeApp();
+const STORAGE_BUCKET = 'chapter-cc187.firebasestorage.app';
+
+initializeApp({
+  storageBucket: STORAGE_BUCKET,
+});
 
 /** Firestore에 PDF 테스트용 주문 스냅샷 삽입 */
 export const seedTestOrderData = onCall(
@@ -36,18 +40,19 @@ export const generateOrderPdf = onCall(
   },
   async (request) => {
     const orderId = request.data?.orderId;
+    const force = request.data?.force === true;
 
     if (typeof orderId !== 'string' || orderId.trim().length === 0) {
       throw new HttpsError('invalid-argument', 'orderId가 필요합니다.');
     }
 
     try {
-      const result = await generatePdfForOrder(orderId.trim());
+      const result = await generatePdfForOrder(orderId.trim(), { force });
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error('generateOrderPdf 실패', { orderId, message });
-      throw new HttpsError('internal', message);
+      logger.error('generateOrderPdf 실패', { orderId, message, stack: error instanceof Error ? error.stack : undefined });
+      throw new HttpsError('failed-precondition', message, { orderId });
     }
   },
 );

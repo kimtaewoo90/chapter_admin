@@ -124,7 +124,6 @@ function photoAreaHeight(plan: LayoutPlan, photoCount: number): number {
 }
 
 function estimateFullHeight(entry: DiaryEntry, plan: LayoutPlan): number {
-  const titleLines = Math.ceil((entry.title.length || 8) / 24);
   const bodyLines = Math.max(
     1,
     Math.ceil(entry.body.length / (plan.textStyle === 'caption' ? 40 : 32)),
@@ -132,8 +131,7 @@ function estimateFullHeight(entry: DiaryEntry, plan: LayoutPlan): number {
   const bodyLineHeight = plan.textStyle === 'caption' ? 12 : 14;
 
   let height = 18; // 날짜
-  height += titleLines * 18 + 16; // 제목 + 여백
-  height += 14; // 구분선
+  height += 16 + 14; // 날짜 여백 + 구분선
 
   const photos = photoAreaHeight(plan, entry.photoUrls.length);
   if (photos > 0) height += photos + 16;
@@ -143,12 +141,10 @@ function estimateFullHeight(entry: DiaryEntry, plan: LayoutPlan): number {
 }
 
 function estimateCompactHeight(entry: DiaryEntry): number {
-  const titleLines = Math.ceil((entry.title.length || 8) / 24);
   const bodyLines = Math.max(0, Math.ceil(entry.body.length / 32));
 
   let height = 18; // 날짜
-  height += titleLines * 18 + 16; // 제목
-  height += 14; // 구분선
+  height += 16 + 14; // 날짜 여백 + 구분선
 
   if (entry.body.length > 0) {
     height += Math.max(1, bodyLines) * 14 + 8;
@@ -162,6 +158,24 @@ function estimateItemHeight(item: PageItem): number {
     return estimateCompactHeight(item.layout.entry);
   }
   return estimateFullHeight(item.layout.entry, item.layout.plan);
+}
+
+/** 연속 배치 — 헤더+사진+글박스(최소)가 들어갈 최소 높이 */
+export function estimateEntryMinHeight(entry: DiaryEntry): number {
+  const plan = decideLayout(entry);
+
+  let height = 18 + 10 + 14; // 날짜 헤더 + 구분선
+
+  const photos = photoAreaHeight(plan, entry.photoUrls.length);
+  if (photos > 0) {
+    height += photos + 12 * 2 + 10; // 사진 박스 패딩 + 간격
+  }
+
+  if (entry.body.length > 0) {
+    height += 2 * 20 + 12 * 2 + 4; // 공책 박스 최소 2줄
+  }
+
+  return height;
 }
 
 function pickLayoutType(photoCount: number, textLength: number): LayoutType {
@@ -271,12 +285,16 @@ export function parseDiaryEntry(raw: Record<string, unknown>): DiaryEntry {
   const body = String(raw.body ?? raw.text ?? raw.content ?? '').trim();
   const title = String(raw.title ?? raw.headline ?? '').trim();
   const date = String(raw.date ?? raw.entryDate ?? raw.month ?? '').trim();
+  const moodEmoji = String(raw.moodEmoji ?? raw.mood ?? '').trim() || undefined;
+  const moodLabel = String(raw.moodLabel ?? '').trim() || undefined;
 
   return {
     date,
-    title: title || date,
+    title,
     body,
     photoUrls: extractPhotoUrls(raw),
+    moodEmoji,
+    moodLabel,
   };
 }
 

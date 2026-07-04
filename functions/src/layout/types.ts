@@ -4,6 +4,8 @@ export interface DiaryEntry {
   title: string;
   body: string;
   photoUrls: string[];
+  moodEmoji?: string;
+  moodLabel?: string;
 }
 
 /**

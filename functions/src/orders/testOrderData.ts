@@ -12,10 +12,14 @@ export function buildTestOrderDocument() {
     amount: 39900,
     status: 'paid',
     shippingAddress: '서울시 강남구 테헤란로 123 (테스트)',
-    createdAt: new Date(),
+    shippingName: '홍길동 (테스트)',
+    shippingPhone: '010-1234-5678',
     paidAt: new Date(),
+    createdAt: new Date(),
     snapshot: {
       bookTitle: '첫 직장생활',
+      '이름': '홍길동 (테스트)',
+      '전화번호': '010-1234-5678',
       entries: [
         {
           date: '2026-03-01',

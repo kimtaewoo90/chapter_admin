@@ -16,6 +16,7 @@ const STORAGE_BUCKET = 'chapter-cc187.firebasestorage.app';
 /** 주문 ID로 PDF 생성 → Storage 업로드 → Firestore 업데이트 */
 export async function generatePdfForOrder(
   orderId: string,
+  options: { force?: boolean } = {},
 ): Promise<GeneratePdfResult> {
   const db = getFirestore();
   const orderRef = db.collection('orders').doc(orderId);
@@ -27,9 +28,9 @@ export async function generatePdfForOrder(
 
   const order = orderSnap.data()!;
 
-  if (order.pdfStatus === 'generating') {
+  if (order.pdfStatus === 'generating' && !options.force) {
     throw new Error(
-      '이미 PDF 생성 중입니다. 1~2분 후 다시 시도하거나 Firestore에서 pdfStatus 필드를 삭제하세요.',
+      '이미 PDF 생성 중입니다. 1~2분 후 다시 시도하거나 PDF 재시도를 눌러주세요.',
     );
   }
 
@@ -63,14 +64,16 @@ export async function generatePdfForOrder(
     await file.save(pdfBuffer, {
       metadata: {
         contentType: 'application/pdf',
+        cacheControl: 'no-cache, max-age=0',
         metadata: { orderId, generatedAt: new Date().toISOString() },
       },
     });
 
+    const version = Date.now();
     let pdfUrl: string;
     try {
       await file.makePublic();
-      pdfUrl = `https://storage.googleapis.com/${STORAGE_BUCKET}/${storagePath}`;
+      pdfUrl = `https://storage.googleapis.com/${STORAGE_BUCKET}/${storagePath}?v=${version}`;
     } catch (publicError) {
       logger.warn('PDF public 설정 실패 — signed URL 사용', {
         orderId,
@@ -80,7 +83,7 @@ export async function generatePdfForOrder(
         action: 'read',
         expires: '03-01-2030',
       });
-      pdfUrl = signedUrl;
+      pdfUrl = `${signedUrl}${signedUrl.includes('?') ? '&' : '?'}v=${version}`;
     }
 
     await orderRef.update({
