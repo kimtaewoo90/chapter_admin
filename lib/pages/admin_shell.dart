@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/auth_service.dart';
 import '../services/order_service.dart';
 import '../services/user_service.dart';
 import 'payments_page.dart';
@@ -10,10 +11,12 @@ enum AdminSection { payments, users, analytics }
 class AdminShell extends StatefulWidget {
   const AdminShell({
     super.key,
+    required this.authService,
     required this.orderService,
     required this.userService,
   });
 
+  final AuthService authService;
   final OrderService orderService;
   final UserService userService;
 
@@ -30,6 +33,26 @@ class _AdminShellState extends State<AdminShell> {
       appBar: AppBar(
         title: const Text('Chapter Admin'),
         centerTitle: false,
+        actions: [
+          if (widget.authService.currentUser?.email case final email?)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Center(
+                child: Text(
+                  email,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          IconButton(
+            tooltip: '로그아웃',
+            onPressed: widget.authService.signOut,
+            icon: const Icon(Icons.logout),
+          ),
+        ],
       ),
       body: Row(
         children: [

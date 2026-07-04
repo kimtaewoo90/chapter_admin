@@ -1,0 +1,44 @@
+rules_version = '2';
+
+// chapter-cc187 공용 프로젝트 규칙
+// - Chapter 앱 유저: 본인 데이터 읽기/쓰기
+// - Admin 어드민: tangbaboda@gmail.com 전체 읽기/쓰기
+//
+// ⚠️ 다른 repo에서 firestore.rules 배포하면 이 파일이 덮어씌워집니다.
+//    어드민/앱 중 한쪽만 deploy --only firestore:rules 하지 말고,
+//    항상 이 병합 규칙을 유지하세요.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email.matches('(?i)^tangbaboda@gmail\\.com$');
+    }
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    match /orders/{orderId} {
+      allow read: if isAdmin()
+        || (request.auth != null && resource.data.userId == request.auth.uid);
+      allow create: if isAdmin() || request.auth != null;
+      allow update, delete: if isAdmin()
+        || (request.auth != null && resource.data.userId == request.auth.uid);
+    }
+
+    match /users/{userId} {
+      allow read, write: if isAdmin() || isOwner(userId);
+
+      match /{document=**} {
+        allow read, write: if isAdmin() || isOwner(userId);
+      }
+    }
+
+    // Admin 유저 목록용 collection group 쿼리 (읽기만)
+    match /{path=**}/entries/{entryId} {
+      allow read: if isAdmin();
+    }
+  }
+}
