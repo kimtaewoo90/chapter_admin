@@ -8,8 +8,9 @@ export const PHOTO_FRAME = {
   radius: 5,
   gap: 16,
   rowGap: 20,
-  maxLongSingle: 300,
-  maxLongMulti: 162,
+  /** 1장 — 세로 사진도 같은 페이지에 글(최소 4줄)이 들어가도록 축소 */
+  maxLongSingle: 220,
+  maxLongMulti: 128,
   bottomGap: 16,
 } as const;
 

@@ -63,7 +63,20 @@ async function main() {
   console.log(`📖 ${bookTitle}`);
   console.log(`📝 일기 ${entries.length}개 → PDF 생성 중...`);
 
-  const pdfBuffer = await generateBookPdf(entries, bookTitle);
+  const diaryFontId =
+    typeof order.diaryFontId === 'string' ? order.diaryFontId : undefined;
+  const cover = {
+    coverType: typeof order.cover === 'string' ? order.cover : 'chapter_icon',
+    coverPhotoUrl:
+      typeof order.coverPhotoUrl === 'string' ? order.coverPhotoUrl : undefined,
+    coverTitle: typeof order.coverTitle === 'string' ? order.coverTitle : undefined,
+  };
+  if (diaryFontId) {
+    console.log(`🔤 일기 폰트: ${diaryFontId}`);
+  }
+  console.log(`🎨 표지: ${cover.coverType}${cover.coverTitle ? ` · ${cover.coverTitle}` : ''}`);
+
+  const pdfBuffer = await generateBookPdf(entries, bookTitle, { diaryFontId, cover });
 
   const outDir = path.join(__dirname, '..', '..', 'output');
   const outPath = writeOutputPdf(

@@ -13,6 +13,18 @@ export interface GeneratePdfResult {
 
 const STORAGE_BUCKET = 'chapter-cc187.firebasestorage.app';
 
+/** 이 시간보다 오래 generating 이면 중단된 작업으로 보고 재시도 허용 */
+const STALE_GENERATING_MS = 5 * 60 * 1000;
+
+function isStaleGenerating(order: FirebaseFirestore.DocumentData): boolean {
+  if (order.pdfStatus !== 'generating') return false;
+
+  const ts = order.pdfGeneratingAt ?? order.updatedAt;
+  if (!ts || typeof ts.toDate !== 'function') return true;
+
+  return Date.now() - ts.toDate().getTime() > STALE_GENERATING_MS;
+}
+
 /** 주문 ID로 PDF 생성 → Storage 업로드 → Firestore 업데이트 */
 export async function generatePdfForOrder(
   orderId: string,
@@ -27,11 +39,16 @@ export async function generatePdfForOrder(
   }
 
   const order = orderSnap.data()!;
+  const staleGenerating = isStaleGenerating(order);
 
-  if (order.pdfStatus === 'generating' && !options.force) {
+  if (order.pdfStatus === 'generating' && !options.force && !staleGenerating) {
     throw new Error(
       '이미 PDF 생성 중입니다. 1~2분 후 다시 시도하거나 PDF 재시도를 눌러주세요.',
     );
+  }
+
+  if (staleGenerating) {
+    logger.warn('PDF generating 상태가 오래됨 — 재시도 허용', { orderId });
   }
 
   const snapshot = order.snapshot as Record<string, unknown> | undefined;
@@ -45,6 +62,8 @@ export async function generatePdfForOrder(
 
   await orderRef.update({
     pdfStatus: 'generating',
+    pdfGeneratingAt: FieldValue.serverTimestamp(),
+    pdfError: FieldValue.delete(),
     updatedAt: FieldValue.serverTimestamp(),
   });
 
@@ -53,9 +72,25 @@ export async function generatePdfForOrder(
       order.bookTitle ?? order.title ?? snapshot?.bookTitle ?? 'Chapter Book',
     );
 
-    logger.info('PDF 생성 시작', { orderId, entryCount: entries.length });
+    const diaryFontId =
+      typeof order.diaryFontId === 'string' ? order.diaryFontId : undefined;
 
-    const pdfBuffer = await generateBookPdf(entries, bookTitle);
+    const cover = {
+      coverType: typeof order.cover === 'string' ? order.cover : 'chapter_icon',
+      coverPhotoUrl:
+        typeof order.coverPhotoUrl === 'string' ? order.coverPhotoUrl : undefined,
+      coverTitle:
+        typeof order.coverTitle === 'string' ? order.coverTitle : undefined,
+    };
+
+    logger.info('PDF 생성 시작', {
+      orderId,
+      entryCount: entries.length,
+      diaryFontId,
+      coverType: cover.coverType,
+    });
+
+    const pdfBuffer = await generateBookPdf(entries, bookTitle, { diaryFontId, cover });
 
     const bucket = getStorage().bucket(STORAGE_BUCKET);
     const storagePath = `pdfs/${orderId}.pdf`;

@@ -1,7 +1,3 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-
 import PDFDocument from 'pdfkit';
 
 import { decideLayout } from '../layout/engine';
@@ -22,19 +18,17 @@ import {
   drawPhotoFrameBox,
   ENTRY_BOX,
   fillDiaryPageBackground,
+  measureNotebookTextHeight,
   photoBoxInnerOrigin,
   photoBoxInnerWidth,
 } from './entryStyle';
 import { fitImageSize, prepareImage, PreparedImage } from './imagePrep';
+import { drawCoverPage, formatCoverDateRange, BookCoverOptions } from './coverPage';
+import { resolveDiaryFontPath } from './diaryFonts';
 import { PHOTO_FRAME } from './photoStyle';
 import { DiaryEntry, LayoutPlan } from '../layout/types';
 
 const PAGE = { width: 420, height: 595, margin: 48 };
-
-const NOTO_FONT_URLS = [
-  'https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf',
-  'https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk@main/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf',
-];
 
 const COLORS = {
   title: '#2C2824',
@@ -44,33 +38,6 @@ const COLORS = {
   line: '#E3DDD3',
   placeholder: '#C5BFB8',
 };
-
-let cachedFontPath: string | null | undefined;
-
-async function ensureKoreanFont(): Promise<string | null> {
-  if (cachedFontPath !== undefined) return cachedFontPath;
-
-  const cachePath = path.join(os.tmpdir(), 'chapter-noto-sans-kr.otf');
-  if (fs.existsSync(cachePath)) {
-    cachedFontPath = cachePath;
-    return cachePath;
-  }
-
-  for (const url of NOTO_FONT_URLS) {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) continue;
-      fs.writeFileSync(cachePath, Buffer.from(await response.arrayBuffer()));
-      cachedFontPath = cachePath;
-      return cachePath;
-    } catch {
-      // 다음 URL
-    }
-  }
-
-  cachedFontPath = null;
-  return null;
-}
 
 async function fetchImageBuffer(url: string): Promise<Buffer | null> {
   try {
@@ -116,6 +83,88 @@ function drawChapterPhoto(
 
 function pageContentBottom(): number {
   return PAGE.height - PAGE.margin;
+}
+
+function pageContentHeight(): number {
+  return pageContentBottom() - PAGE.margin;
+}
+
+function estimateHeaderHeight(entry: DiaryEntry): number {
+  let height = ENTRY_STYLE.headerBottomGap + 14;
+  if (entry.date) {
+    height += ENTRY_STYLE.dateSize * 1.2 + ENTRY_STYLE.dateGap;
+  }
+  return height;
+}
+
+function measurePhotoBlockHeight(
+  entry: DiaryEntry,
+  images: Map<number, PreparedImage>,
+  usableWidth: number,
+): number {
+  const photoCount = entry.photoUrls.length;
+  if (photoCount === 0) return 0;
+
+  const innerWidth = photoBoxInnerWidth(usableWidth);
+  const stickerItems: StickerItem[] = [];
+  for (let i = 0; i < photoCount; i++) {
+    stickerItems.push({
+      index: i,
+      meta: images.get(i) ?? { width: 4, height: 3 },
+    });
+  }
+
+  const maxLong =
+    photoCount === 1 ? PHOTO_FRAME.maxLongSingle : PHOTO_FRAME.maxLongMulti;
+  const collage = layoutStickerCollage(stickerItems, innerWidth, {
+    maxLongEdge: maxLong,
+  });
+
+  return collage.totalHeight + ENTRY_BOX.pad * 2 + ENTRY_BOX.sectionGap;
+}
+
+function estimateEntryDrawHeight(
+  doc: PDFKit.PDFDocument,
+  entry: DiaryEntry,
+  plan: LayoutPlan,
+  fontPath: string | null,
+  images: Map<number, PreparedImage>,
+): number {
+  const usableWidth = contentWidth();
+  let height = estimateHeaderHeight(entry);
+
+  if (entry.photoUrls.length > 0) {
+    height += measurePhotoBlockHeight(entry, images, usableWidth);
+  }
+
+  if (entry.body.length > 0) {
+    const fontSize = plan.textStyle === 'caption' ? 10 : ENTRY_STYLE.bodySize;
+    const innerWidth = usableWidth - ENTRY_BOX.pad * 2;
+    const textBlockHeight = measureNotebookTextHeight(
+      doc,
+      fontPath,
+      entry.body,
+      innerWidth,
+      fontSize,
+    );
+    height += ENTRY_BOX.pad * 2 + textBlockHeight + ENTRY_BOX.boxGap;
+  }
+
+  return height;
+}
+
+function centeredEntryStartY(entryHeight: number): number {
+  const available = pageContentHeight();
+  if (entryHeight >= available) return PAGE.margin;
+  return PAGE.margin + (available - entryHeight) / 2;
+}
+
+/** 짧은 글만 / 월 첫 일기 → 페이지 세로 중앙 */
+function shouldCenterEntryOnPage(
+  entryIndexInMonth: number,
+  plan: LayoutPlan,
+): boolean {
+  return entryIndexInMonth === 0 || plan.pageMode === 'compact';
 }
 
 function ensureVerticalSpace(
@@ -193,44 +242,12 @@ function drawPhotoSection(
   return boxY + boxHeight + ENTRY_BOX.sectionGap;
 }
 
-function drawCoverPage(
-  doc: PDFKit.PDFDocument,
-  bookTitle: string,
-  fontPath: string | null,
-): void {
-  const centerY = PAGE.height * 0.38;
-
-  doc
-    .moveTo(PAGE.margin + 40, centerY + 50)
-    .lineTo(PAGE.width - PAGE.margin - 40, centerY + 50)
-    .strokeColor(COLORS.line)
-    .lineWidth(0.5)
-    .stroke();
-
-  setFont(doc, fontPath, 'bold');
-  doc.fontSize(24).fillColor(COLORS.title);
-  doc.text(bookTitle, PAGE.margin, centerY - 20, {
-    width: contentWidth(),
-    align: 'center',
-  });
-
-  setFont(doc, fontPath, 'regular');
-  doc.fontSize(11).fillColor(COLORS.subtitle);
-  doc.text('Chapter', PAGE.margin, centerY + 64, {
-    width: contentWidth(),
-    align: 'center',
-  });
-}
-
 const ENTRY_STYLE = {
   dateSize: 12,
   moodSize: 10,
   bodySize: 11,
   dateGap: 16,
   headerBottomGap: 14,
-  entryGap: 28,
-  /** 날짜 + 구분선 — 이 높이 미만이면 새 페이지 */
-  headerMinHeight: 42,
 };
 
 function formatEntryDateLabel(date: string): string {
@@ -440,38 +457,42 @@ async function renderMonthEntries(
   entries: DiaryEntry[],
   fontPath: string | null,
 ): Promise<void> {
-  doc.addPage();
-  fillDiaryPageBackground(doc, PAGE.width, PAGE.height);
-
   const onNewPage = () => fillDiaryPageBackground(doc, PAGE.width, PAGE.height);
-  let cursorY = PAGE.margin;
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     const plan = decideLayout(entry);
 
-    if (i > 0) cursorY += ENTRY_STYLE.entryGap;
+    doc.addPage();
+    onNewPage();
 
-    cursorY = ensureVerticalSpace(
-      doc,
-      cursorY,
-      ENTRY_STYLE.headerMinHeight,
-      onNewPage,
-    );
+    const images =
+      plan.pageMode === 'full' ? await loadImages(entry) : new Map<number, PreparedImage>();
 
-    if (plan.pageMode === 'full') {
-      const images = await loadImages(entry);
-      cursorY = drawFullEntry(
+    let startY = PAGE.margin;
+    if (shouldCenterEntryOnPage(i, plan)) {
+      const estimatedHeight = estimateEntryDrawHeight(
         doc,
         entry,
         plan,
         fontPath,
         images,
-        cursorY,
+      );
+      startY = centeredEntryStartY(estimatedHeight);
+    }
+
+    if (plan.pageMode === 'full') {
+      drawFullEntry(
+        doc,
+        entry,
+        plan,
+        fontPath,
+        images,
+        startY,
         onNewPage,
       );
     } else {
-      cursorY = drawCompactEntry(doc, entry, fontPath, cursorY, onNewPage);
+      drawCompactEntry(doc, entry, fontPath, startY, onNewPage);
     }
   }
 }
@@ -480,9 +501,17 @@ async function renderMonthEntries(
 export async function generateBookPdf(
   entries: DiaryEntry[],
   bookTitle: string,
+  options: { diaryFontId?: string; cover?: BookCoverOptions } = {},
 ): Promise<Buffer> {
-  const fontPath = await ensureKoreanFont();
+  const fontPath = await resolveDiaryFontPath(options.diaryFontId);
   const sortedEntries = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  const cover: BookCoverOptions = {
+    coverType: options.cover?.coverType ?? 'chapter_icon',
+    coverPhotoUrl: options.cover?.coverPhotoUrl,
+    coverTitle: options.cover?.coverTitle?.trim() || undefined,
+    dateRangeLabel:
+      options.cover?.dateRangeLabel?.trim() || formatCoverDateRange(sortedEntries),
+  };
   const months = listMonthsWithEntries(sortedEntries);
   const { gridWidth } = calendarContentGridSize();
 
@@ -500,7 +529,7 @@ export async function generateBookPdf(
 
     void (async () => {
       try {
-        drawCoverPage(doc, bookTitle, fontPath);
+        await drawCoverPage(doc, fontPath, cover);
 
         if (sortedEntries.length === 0) {
           setFont(doc, fontPath, 'regular');

@@ -142,9 +142,7 @@ class _PaymentsPageState extends State<PaymentsPage> {
     try {
       final pdfUrl = await widget.orderService.generatePdf(
         order.id,
-        force: order.isPdfFailed ||
-            order.isPdfGenerating ||
-            order.pdfUrl != null,
+        force: true,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
