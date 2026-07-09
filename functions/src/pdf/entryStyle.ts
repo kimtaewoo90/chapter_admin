@@ -1,5 +1,4 @@
 import { getEntryBodyStyle } from './bodyStyle';
-import { drawMonthPageWatermark } from './pageWatermark';
 
 export type { EntryBodyStyle } from './bodyStyle';
 export {
@@ -512,21 +511,6 @@ export function fillDiaryPageBackground(
   doc: PDFKit.PDFDocument,
   pageW: number,
   pageH: number,
-  options?: {
-    watermarkMonth?: { year: number; month: number };
-    fontPath?: string | null;
-  },
 ): void {
   doc.rect(0, 0, pageW, pageH).fill(PAGE_PAPER);
-
-  if (options?.watermarkMonth) {
-    drawMonthPageWatermark(
-      doc,
-      options.fontPath ?? null,
-      options.watermarkMonth.year,
-      options.watermarkMonth.month,
-      pageW,
-      pageH,
-    );
-  }
 }

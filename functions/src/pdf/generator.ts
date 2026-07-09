@@ -452,14 +452,8 @@ async function renderMonthEntries(
   doc: PDFKit.PDFDocument,
   entries: DiaryEntry[],
   fontPath: string | null,
-  year: number,
-  month: number,
 ): Promise<void> {
-  const paintPage = () =>
-    fillDiaryPageBackground(doc, PAGE.width, PAGE.height, {
-      watermarkMonth: { year, month },
-      fontPath,
-    });
+  const paintPage = () => fillDiaryPageBackground(doc, PAGE.width, PAGE.height);
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
@@ -565,7 +559,7 @@ export async function generateBookPdf(
           doc.addPage();
           drawCalendarMonthPage(doc, calendarLayout, fontPath, calendarImages);
 
-          await renderMonthEntries(doc, monthEntries, fontPath, year, month);
+          await renderMonthEntries(doc, monthEntries, fontPath);
         }
 
         stampPageNumbers(doc, fontPath, PAGE);

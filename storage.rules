@@ -1,0 +1,58 @@
+rules_version = '2';
+
+// chapter-cc187 공용 Storage 규칙
+// - Chapter 앱 유저: 본인 testUser/{uid}/… 사진 읽기·업로드·삭제·목록
+// - Admin: tangbaboda@gmail.com 전체 접근
+//
+// ⚠️ chapter/storage.rules 와 동기화 유지
+// ⚠️ 다른 repo에서 storage 배포 시 이 파일이 덮어씌워지지 않도록 내용을 맞춰 주세요.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email.matches('(?i)^tangbaboda@gmail\\.com$');
+    }
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function canAccessUserPhotos(userId) {
+      return isOwner(userId) || isAdmin();
+    }
+
+    function isValidImageUpload() {
+      return request.resource != null
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    match /testUser/{userId}/{date}/{fileName} {
+      allow read: if canAccessUserPhotos(userId);
+      allow create, update: if canAccessUserPhotos(userId) && isValidImageUpload();
+      allow delete: if canAccessUserPhotos(userId);
+    }
+
+    match /testUser/{userId}/{date} {
+      allow list: if canAccessUserPhotos(userId);
+    }
+
+    match /users/{userId}/{date}/{fileName} {
+      allow read: if canAccessUserPhotos(userId);
+      allow create, update: if canAccessUserPhotos(userId) && isValidImageUpload();
+      allow delete: if canAccessUserPhotos(userId);
+    }
+
+    match /users/{userId}/{date} {
+      allow list: if canAccessUserPhotos(userId);
+    }
+
+    match /pdfs/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+  }
+}
