@@ -1,7 +1,11 @@
 {
   "firestore": {
+<<<<<<< Updated upstream
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
+=======
+    "rules": "firestore.rules"
+>>>>>>> Stashed changes
   },
   "functions": [
     {
