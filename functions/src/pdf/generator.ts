@@ -23,6 +23,7 @@ import {
 import { fitImageSize, prepareImage, PreparedImage } from './imagePrep';
 import { drawCoverPage, formatCoverDateRange, BookCoverOptions } from './coverPage';
 import { resolveDiaryFontPath } from './diaryFonts';
+import { stampPageNumbers } from './pageNumbers';
 import { EntryBodyStyle, setEntryBodyStyle } from './bodyStyle';
 import { PHOTO_FRAME } from './photoStyle';
 import { DiaryEntry, LayoutPlan } from '../layout/types';
@@ -451,15 +452,21 @@ async function renderMonthEntries(
   doc: PDFKit.PDFDocument,
   entries: DiaryEntry[],
   fontPath: string | null,
+  year: number,
+  month: number,
 ): Promise<void> {
-  const onNewPage = () => fillDiaryPageBackground(doc, PAGE.width, PAGE.height);
+  const paintPage = () =>
+    fillDiaryPageBackground(doc, PAGE.width, PAGE.height, {
+      watermarkMonth: { year, month },
+      fontPath,
+    });
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     const plan = decideLayout(entry);
 
     doc.addPage();
-    onNewPage();
+    paintPage();
 
     const images =
       plan.pageMode === 'full' ? await loadImages(entry) : new Map<number, PreparedImage>();
@@ -484,10 +491,10 @@ async function renderMonthEntries(
         fontPath,
         images,
         startY,
-        onNewPage,
+        paintPage,
       );
     } else {
-      drawCompactEntry(doc, entry, fontPath, startY, onNewPage);
+      drawCompactEntry(doc, entry, fontPath, startY, paintPage);
     }
   }
 }
@@ -519,6 +526,7 @@ export async function generateBookPdf(
     const doc = new PDFDocument({
       size: [PAGE.width, PAGE.height],
       margin: PAGE.margin,
+      bufferPages: true,
       info: { Title: bookTitle, Author: 'Chapter' },
     });
 
@@ -538,6 +546,7 @@ export async function generateBookPdf(
             width: contentWidth(),
             align: 'center',
           });
+          stampPageNumbers(doc, fontPath, PAGE);
           doc.end();
           return;
         }
@@ -556,9 +565,10 @@ export async function generateBookPdf(
           doc.addPage();
           drawCalendarMonthPage(doc, calendarLayout, fontPath, calendarImages);
 
-          await renderMonthEntries(doc, monthEntries, fontPath);
+          await renderMonthEntries(doc, monthEntries, fontPath, year, month);
         }
 
+        stampPageNumbers(doc, fontPath, PAGE);
         doc.end();
       } catch (error) {
         reject(error);

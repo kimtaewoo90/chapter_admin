@@ -5,21 +5,20 @@
 import { fitImageSize, PreparedImage } from './imagePrep';
 import {
   CALENDAR_COLORS,
+  CALENDAR_HEADER,
   CALENDAR_PAGE,
   CALENDAR_WEEKDAYS,
   CalendarMonthLayout,
-  calendarGridTopY,
-  calendarMaxGridHeight,
+  calendarBlockStartY,
+  calendarGridOriginX,
+  calendarHeaderHeight,
 } from './calendarLayout';
 
 const STYLE = {
-  titleSize: 16,
   weekdaySize: 9,
   dayNumSize: 7,
   dayEntrySize: 8,
   moodSize: 12,
-  titleBottomGap: 12,
-  weekdayBottomGap: 6,
   cellRadius: 5,
   photoRadius: 4,
 };
@@ -78,32 +77,30 @@ export function drawCalendarMonthPage(
   images: Map<string, PreparedImage> = new Map(),
 ): void {
   const usableW = contentWidth();
+  const blockY = calendarBlockStartY(layout.totalGridHeight);
+  const headerH = calendarHeaderHeight();
+  const gridStartY = blockY + headerH;
+  const gridX = calendarGridOriginX(layout);
 
   doc.rect(0, 0, CALENDAR_PAGE.width, CALENDAR_PAGE.height).fill(CALENDAR_COLORS.paper);
 
-  let y = CALENDAR_PAGE.margin;
-
   setFont(doc, fontPath, 'bold');
-  doc.fontSize(STYLE.titleSize).fillColor(CALENDAR_COLORS.ink);
-  doc.text(layout.monthLabel, CALENDAR_PAGE.margin, y, {
+  doc.fontSize(CALENDAR_HEADER.titleSize).fillColor(CALENDAR_COLORS.ink);
+  doc.text(layout.monthLabel, CALENDAR_PAGE.margin, blockY, {
     width: usableW,
     align: 'center',
   });
-  y += STYLE.titleSize + STYLE.titleBottomGap;
 
+  const weekdayY = blockY + CALENDAR_HEADER.titleSize + CALENDAR_HEADER.titleBottomGap;
   const colW = usableW / 7;
   setFont(doc, fontPath, 'regular');
   doc.fontSize(STYLE.weekdaySize).fillColor(CALENDAR_COLORS.inkMuted);
   for (let c = 0; c < 7; c++) {
-    doc.text(CALENDAR_WEEKDAYS[c], CALENDAR_PAGE.margin + colW * c, y, {
+    doc.text(CALENDAR_WEEKDAYS[c], CALENDAR_PAGE.margin + colW * c, weekdayY, {
       width: colW,
       align: 'center',
     });
   }
-
-  const gridTop = calendarGridTopY();
-  const maxGridH = calendarMaxGridHeight();
-  const gridStartY = gridTop + Math.max(0, (maxGridH - layout.totalGridHeight) / 2);
 
   const gap = layout.gap;
   const cellW = layout.cellWidth;
@@ -116,7 +113,7 @@ export function drawCalendarMonthPage(
       const cell = layout.cells[row * 7 + col];
       if (!cell?.day) continue;
 
-      const cellX = CALENDAR_PAGE.margin + col * (cellW + gap);
+      const cellX = gridX + col * (cellW + gap);
 
       if (!cell.hasEntry) {
         setFont(doc, fontPath, 'regular');

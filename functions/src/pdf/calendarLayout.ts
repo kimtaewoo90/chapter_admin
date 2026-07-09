@@ -13,6 +13,25 @@ export const CALENDAR_WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토
 
 export const CALENDAR_PAGE = { width: 420, height: 595, margin: 48 } as const;
 
+/** 캘린더 헤더 — 제목·요일 (calendarPage 와 동기화) */
+export const CALENDAR_HEADER = {
+  titleSize: 16,
+  /** 「yyyy년 M월」 아래 ~ 요일 행 사이 */
+  titleBottomGap: 24,
+  weekdayRowHeight: 11,
+  weekdayBottomGap: 6,
+} as const;
+
+/** 캘린더 페이지 여백·크기 */
+export const CALENDAR_PAGE_LAYOUT = {
+  /** 그리드 가로 축소 — 위아래 여백 확보 */
+  contentScale: 0.86,
+  /** 페이지 번호 영역 */
+  footerReserve: 36,
+  /** 블록이 너무 위로 붙지 않도록 최소 상단 여백 */
+  minBlockTopGap: 16,
+} as const;
+
 /** 그리드 셀 치수 — calendarPage.ts 와 동기화 */
 export const CALENDAR_GRID = {
   gap: 4,
@@ -70,18 +89,22 @@ export function monthLabelKo(year: number, month: number): string {
   return `${year}년 ${month}월`;
 }
 
-/** calendarPage 헤더(제목+요일) 아래 y 좌표 */
+/** 제목 + 요일 행 높이 */
+export function calendarHeaderHeight(): number {
+  const h = CALENDAR_HEADER;
+  return h.titleSize + h.titleBottomGap + h.weekdayRowHeight + h.weekdayBottomGap;
+}
+
+/** @deprecated calendarPage 에서 블록 중앙 배치 사용 */
 export function calendarGridTopY(): number {
-  const { margin } = CALENDAR_PAGE;
-  const titleSize = 16;
-  const titleBottomGap = 12;
-  const weekdayRow = 11;
-  const weekdayBottomGap = 6;
-  return margin + titleSize + titleBottomGap + weekdayRow + weekdayBottomGap;
+  return CALENDAR_PAGE.margin + calendarHeaderHeight();
 }
 
 export function calendarMaxGridHeight(): number {
-  return CALENDAR_PAGE.height - CALENDAR_PAGE.margin - calendarGridTopY();
+  const { margin } = CALENDAR_PAGE;
+  const { footerReserve } = CALENDAR_PAGE_LAYOUT;
+  const usable = CALENDAR_PAGE.height - margin * 2 - footerReserve;
+  return usable - calendarHeaderHeight();
 }
 
 /**
@@ -219,7 +242,29 @@ export function entriesForMonth<T extends { date: string }>(
 }
 
 export function calendarContentGridSize(): { gridWidth: number } {
+  const fullWidth = CALENDAR_PAGE.width - CALENDAR_PAGE.margin * 2;
   return {
-    gridWidth: CALENDAR_PAGE.width - CALENDAR_PAGE.margin * 2,
+    gridWidth: fullWidth * CALENDAR_PAGE_LAYOUT.contentScale,
   };
+}
+
+/** 제목·요일·그리드 전체 블록의 세로 중앙 y */
+export function calendarBlockStartY(totalGridHeight: number): number {
+  const { margin } = CALENDAR_PAGE;
+  const { footerReserve, minBlockTopGap } = CALENDAR_PAGE_LAYOUT;
+  const headerH = calendarHeaderHeight();
+  const blockH = headerH + totalGridHeight;
+  const areaTop = margin;
+  const areaBottom = CALENDAR_PAGE.height - margin - footerReserve;
+  const centered = areaTop + (areaBottom - areaTop - blockH) / 2;
+  return Math.max(areaTop + minBlockTopGap, centered);
+}
+
+export function calendarGridOriginX(layout: {
+  cellWidth: number;
+  gap: number;
+}): number {
+  const usableW = CALENDAR_PAGE.width - CALENDAR_PAGE.margin * 2;
+  const gridW = layout.cellWidth * 7 + layout.gap * 6;
+  return CALENDAR_PAGE.margin + (usableW - gridW) / 2;
 }
