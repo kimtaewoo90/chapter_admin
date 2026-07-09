@@ -11,8 +11,9 @@ const DOC_MARGIN = 48;
 
 const COVER_STYLE = {
   padding: 28,
-  paper: '#F5F0E8',
-  border: '#E8E0D4',
+  /** 속지(#F5F0E8)보다 한 톤 진한 린넨 — 하드커버 느낌 */
+  paper: '#E6DCC8',
+  border: '#D4C8B4',
   ink: '#2C2824',
   inkMuted: '#6B6560',
   titleSize: 15,

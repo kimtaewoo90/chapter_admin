@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/chapter_user.dart';
 import '../models/order.dart';
+import '../services/auth_service.dart';
 
 class UserSubcollectionStats {
   const UserSubcollectionStats({
@@ -38,10 +39,16 @@ class UsersPageState {
 }
 
 class UserService {
-  UserService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+  UserService({
+    AuthService? authService,
+    FirebaseFirestore? firestore,
+  })  : _authService = authService,
+        _firestore = firestore ?? FirebaseFirestore.instance;
 
+  final AuthService? _authService;
   final FirebaseFirestore _firestore;
+
+  bool get devBypass => _authService?.devBypass ?? false;
 
   static const _entriesGroup = 'entries';
   static const _sources = ['users', 'orders', _entriesGroup];

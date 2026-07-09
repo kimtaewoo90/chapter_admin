@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config/admin_config.dart';
 import '../services/auth_service.dart';
 import '../services/order_service.dart';
 import '../services/user_service.dart';
@@ -29,9 +30,11 @@ class _AdminShellState extends State<AdminShell> {
 
   @override
   Widget build(BuildContext context) {
+    final devBypass = widget.authService.devBypass;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Chapter Admin'),
+        title: Text(devBypass ? 'Chapter Admin (개발)' : 'Chapter Admin'),
         centerTitle: false,
         actions: [
           if (widget.authService.currentUser?.email case final email?)
@@ -54,34 +57,57 @@ class _AdminShellState extends State<AdminShell> {
           ),
         ],
       ),
-      body: Row(
+      body: Column(
         children: [
-          NavigationRail(
-            selectedIndex: _section.index,
-            onDestinationSelected: (index) {
-              setState(() => _section = AdminSection.values[index]);
-            },
-            labelType: NavigationRailLabelType.all,
-            destinations: const [
-              NavigationRailDestination(
-                icon: Icon(Icons.payments_outlined),
-                selectedIcon: Icon(Icons.payments),
-                label: Text('결제상황'),
+          if (devBypass)
+            MaterialBanner(
+              content: const Text(
+                '개발 모드 — Firestore dev rules 가 배포되어 있어야 데이터가 보입니다.\n'
+                '집 PC에서: .\\scripts\\deploy-rules-dev.ps1 (1회)\n'
+                'PDF 만들기 CORS 오류 시: .\\scripts\\fix-function-invoker.ps1',
               ),
-              NavigationRailDestination(
-                icon: Icon(Icons.people_outline),
-                selectedIcon: Icon(Icons.people),
-                label: Text('유저상황'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.analytics_outlined),
-                selectedIcon: Icon(Icons.analytics),
-                label: Text('Analytics'),
-              ),
-            ],
+              leading: const Icon(Icons.info_outline),
+              backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+              actions: [
+                if (!AdminConfig.skipAuth)
+                  TextButton(
+                    onPressed: widget.authService.exitDevBypass,
+                    child: const Text('로그인 화면'),
+                  ),
+              ],
+            ),
+          Expanded(
+            child: Row(
+              children: [
+                NavigationRail(
+                  selectedIndex: _section.index,
+                  onDestinationSelected: (index) {
+                    setState(() => _section = AdminSection.values[index]);
+                  },
+                  labelType: NavigationRailLabelType.all,
+                  destinations: const [
+                    NavigationRailDestination(
+                      icon: Icon(Icons.payments_outlined),
+                      selectedIcon: Icon(Icons.payments),
+                      label: Text('결제상황'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.people_outline),
+                      selectedIcon: Icon(Icons.people),
+                      label: Text('유저상황'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.analytics_outlined),
+                      selectedIcon: Icon(Icons.analytics),
+                      label: Text('Analytics'),
+                    ),
+                  ],
+                ),
+                const VerticalDivider(width: 1),
+                Expanded(child: _buildContent()),
+              ],
+            ),
           ),
-          const VerticalDivider(width: 1),
-          Expanded(child: _buildContent()),
         ],
       ),
     );

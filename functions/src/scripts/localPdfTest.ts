@@ -1,28 +1,46 @@
 /**
  * Firebase 배포 없이 Layout Engine + PDF 생성 로컬 테스트
  *
- * 실행: npm run pdf:local
- * 결과: output/sample.pdf
+ * 실행:
+ *   npm run pdf:local -- <스타일번호>
+ *
+ * 결과: output/sample-<스타일>.pdf
  */
 import path from 'node:path';
 
 import { parseSnapshotEntries } from '../layout/engine';
 import { generateBookPdf } from '../pdf/generator';
 import { buildTestOrderDocument } from '../orders/testOrderData';
+import { logBodyStyleSelection, parseBodyStyleArg, printPdfStyleUsage } from './pdfStyleCli';
 import { writeOutputPdf } from './writeOutputPdf';
 
 async function main() {
+  const styleArg = process.argv[2];
+
+  let bodyStyle;
+  try {
+    bodyStyle = parseBodyStyleArg(styleArg);
+  } catch (error) {
+    console.error('❌', (error as Error).message);
+    printPdfStyleUsage('pdf:local');
+    process.exit(1);
+  }
+
   const order = buildTestOrderDocument();
   const snapshot = order.snapshot as Record<string, unknown>;
   const entries = parseSnapshotEntries(snapshot);
 
   console.log(`📖 책: ${order.bookTitle}`);
+  logBodyStyleSelection(bodyStyle, styleArg);
   console.log(`📝 일기 ${entries.length}개 → PDF 생성 중...`);
 
-  const pdfBuffer = await generateBookPdf(entries, order.bookTitle);
+  const pdfBuffer = await generateBookPdf(entries, order.bookTitle, { bodyStyle });
 
   const outDir = path.join(__dirname, '..', '..', 'output');
-  const outPath = writeOutputPdf(path.join(outDir, 'sample.pdf'), pdfBuffer);
+  const outPath = writeOutputPdf(
+    path.join(outDir, `sample-${bodyStyle}.pdf`),
+    pdfBuffer,
+  );
 
   console.log(`✅ PDF 생성 완료!`);
   console.log(`   ${outPath}`);

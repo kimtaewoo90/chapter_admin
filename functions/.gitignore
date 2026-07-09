@@ -3,3 +3,6 @@ lib/
 output/
 *.local
 .firebase/
+service-account.json
+*-firebase-adminsdk-*.json
+fixtures/orders/*.json

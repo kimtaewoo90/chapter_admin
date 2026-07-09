@@ -44,9 +44,12 @@ class Order {
   final DateTime? updatedAt;
 
   factory Order.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data() ?? {};
+    return Order.fromMap(doc.id, doc.data() ?? {});
+  }
+
+  factory Order.fromMap(String id, Map<String, dynamic> data) {
     return Order(
-      id: doc.id,
+      id: id,
       userId: data['userId'] as String? ?? '',
       bookId: data['bookId'] as String? ?? '',
       status: OrderStatus.fromString(data['status'] as String?),
@@ -75,7 +78,9 @@ class Order {
       pdfUrl: data['pdfUrl'] as String?,
       pdfStatus: data['pdfStatus'] as String?,
       pdfError: data['pdfError'] as String?,
-      snapshot: data['snapshot'] as Map<String, dynamic>?,
+      snapshot: data['snapshot'] is Map
+          ? Map<String, dynamic>.from(data['snapshot'] as Map)
+          : null,
       snapshots: data['snapshots'] as List<dynamic>?,
       paidAt: _parseTimestamp(data['paidAt']),
       pdfGeneratedAt: _parseTimestamp(data['pdfGeneratedAt']),

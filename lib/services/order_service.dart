@@ -4,26 +4,29 @@ import 'package:flutter/foundation.dart';
 
 import '../models/order.dart';
 import '../models/order_status.dart';
+import '../services/auth_service.dart';
 import '../utils/functions_error.dart';
 
 class OrderService {
   OrderService({
+    AuthService? authService,
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
-  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+  })  : _authService = authService,
+        _firestore = firestore ?? FirebaseFirestore.instance,
         _functions = functions ??
             FirebaseFunctions.instanceFor(region: 'asia-northeast3');
 
+  final AuthService? _authService;
   final FirebaseFirestore _firestore;
   final FirebaseFunctions _functions;
 
   static final _callableOptions = HttpsCallableOptions(
-<<<<<<< Updated upstream
     timeout: const Duration(minutes: 5),
-=======
-    timeout: Duration(minutes: 5),
->>>>>>> Stashed changes
   );
+
+  /// 개발 모드 UI 진입 여부 (Firestore 직접 조회 — dev rules 필요)
+  bool get devBypass => _authService?.devBypass ?? false;
 
   CollectionReference<Map<String, dynamic>> get _orders =>
       _firestore.collection('orders');
@@ -57,14 +60,9 @@ class OrderService {
     });
   }
 
-<<<<<<< Updated upstream
   Future<String> generatePdf(String orderId, {bool force = false}) async {
     debugPrint('[OrderService] generatePdf 시작 orderId=$orderId force=$force');
 
-=======
-  /// Firebase Function generateOrderPdf 호출
-  Future<String> generatePdf(String orderId) async {
->>>>>>> Stashed changes
     try {
       final callable = _functions.httpsCallable(
         'generateOrderPdf',
@@ -72,7 +70,6 @@ class OrderService {
       );
       final result = await callable.call<Map<String, dynamic>>({
         'orderId': orderId,
-<<<<<<< Updated upstream
         if (force) 'force': true,
       });
 
@@ -89,30 +86,18 @@ class OrderService {
       debugPrint('[OrderService] generatePdf 예외: $error');
       debugPrint('$stackTrace');
       rethrow;
-=======
-      });
-      return result.data['pdfUrl'] as String? ?? '';
-    } on FirebaseFunctionsException catch (e) {
-      throw Exception(
-        _formatFunctionsError(e, fallback: 'PDF 생성 Function 호출 실패'),
-      );
->>>>>>> Stashed changes
     }
   }
 
   Future<String> seedTestOrder() async {
-<<<<<<< Updated upstream
     debugPrint('[OrderService] seedTestOrder 시작');
 
-=======
->>>>>>> Stashed changes
     try {
       final callable = _functions.httpsCallable(
         'seedTestOrderData',
         options: _callableOptions,
       );
       final result = await callable.call<Map<String, dynamic>>({});
-<<<<<<< Updated upstream
       final orderId = result.data['orderId'] as String? ?? '';
       debugPrint('[OrderService] seedTestOrder 성공 orderId=$orderId');
       return orderId;
@@ -127,25 +112,6 @@ class OrderService {
       debugPrint('$stackTrace');
       rethrow;
     }
-=======
-      return result.data['orderId'] as String? ?? '';
-    } on FirebaseFunctionsException catch (e) {
-      throw Exception(
-        _formatFunctionsError(e, fallback: '테스트 주문 Function 호출 실패'),
-      );
-    }
-  }
-
-  String _formatFunctionsError(
-    FirebaseFunctionsException e, {
-    required String fallback,
-  }) {
-    final message = e.message?.trim();
-    if (message != null && message.isNotEmpty && message != 'internal') {
-      return message;
-    }
-    return '$fallback (${e.code})';
->>>>>>> Stashed changes
   }
 }
 

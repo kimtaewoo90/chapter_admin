@@ -4,6 +4,9 @@
 class AdminConfig {
   AdminConfig._();
 
+  /// `flutter run --dart-define=ADMIN_SKIP_AUTH=true` 또는 회사 PC 시작 스크립트
+  static const skipAuth = bool.fromEnvironment('ADMIN_SKIP_AUTH');
+
   static const allowedEmails = <String>{
     'tangbaboda@gmail.com',
   };

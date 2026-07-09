@@ -14,17 +14,16 @@ import {
 } from './calendarLayout';
 import { drawCalendarMonthPage } from './calendarPage';
 import {
+  bodyTextInnerWidth,
   drawNotebookTextFlow,
-  drawPhotoFrameBox,
   ENTRY_BOX,
   fillDiaryPageBackground,
   measureNotebookTextHeight,
-  photoBoxInnerOrigin,
-  photoBoxInnerWidth,
 } from './entryStyle';
 import { fitImageSize, prepareImage, PreparedImage } from './imagePrep';
 import { drawCoverPage, formatCoverDateRange, BookCoverOptions } from './coverPage';
 import { resolveDiaryFontPath } from './diaryFonts';
+import { EntryBodyStyle, setEntryBodyStyle } from './bodyStyle';
 import { PHOTO_FRAME } from './photoStyle';
 import { DiaryEntry, LayoutPlan } from '../layout/types';
 
@@ -35,7 +34,7 @@ const COLORS = {
   subtitle: '#6B6560',
   body: '#2C2824',
   muted: '#9A948C',
-  line: '#E3DDD3',
+  line: '#8B7355',
   placeholder: '#C5BFB8',
 };
 
@@ -105,7 +104,6 @@ function measurePhotoBlockHeight(
   const photoCount = entry.photoUrls.length;
   if (photoCount === 0) return 0;
 
-  const innerWidth = photoBoxInnerWidth(usableWidth);
   const stickerItems: StickerItem[] = [];
   for (let i = 0; i < photoCount; i++) {
     stickerItems.push({
@@ -116,11 +114,11 @@ function measurePhotoBlockHeight(
 
   const maxLong =
     photoCount === 1 ? PHOTO_FRAME.maxLongSingle : PHOTO_FRAME.maxLongMulti;
-  const collage = layoutStickerCollage(stickerItems, innerWidth, {
+  const collage = layoutStickerCollage(stickerItems, usableWidth, {
     maxLongEdge: maxLong,
   });
 
-  return collage.totalHeight + ENTRY_BOX.pad * 2 + ENTRY_BOX.sectionGap;
+  return collage.totalHeight + ENTRY_BOX.sectionGap;
 }
 
 function estimateEntryDrawHeight(
@@ -139,7 +137,7 @@ function estimateEntryDrawHeight(
 
   if (entry.body.length > 0) {
     const fontSize = plan.textStyle === 'caption' ? 10 : ENTRY_STYLE.bodySize;
-    const innerWidth = usableWidth - ENTRY_BOX.pad * 2;
+    const innerWidth = bodyTextInnerWidth(usableWidth);
     const textBlockHeight = measureNotebookTextHeight(
       doc,
       fontPath,
@@ -191,7 +189,6 @@ function drawPhotoSection(
   const photoCount = entry.photoUrls.length;
   if (photoCount === 0) return startY;
 
-  const innerWidth = photoBoxInnerWidth(usableWidth);
   const stickerItems: StickerItem[] = [];
   for (let i = 0; i < photoCount; i++) {
     const prepared = images.get(i);
@@ -203,19 +200,17 @@ function drawPhotoSection(
 
   const maxLong =
     photoCount === 1 ? PHOTO_FRAME.maxLongSingle : PHOTO_FRAME.maxLongMulti;
-  const collage = layoutStickerCollage(stickerItems, innerWidth, {
+  const collage = layoutStickerCollage(stickerItems, usableWidth, {
     maxLongEdge: maxLong,
   });
 
-  const sectionHeight = collage.totalHeight + ENTRY_BOX.pad * 2 + ENTRY_BOX.sectionGap;
-  const boxX = PAGE.margin;
-  const boxY = ensureVerticalSpace(doc, startY, sectionHeight, onNewPage);
-  const boxHeight = drawPhotoFrameBox(doc, boxX, boxY, usableWidth, collage.totalHeight);
-  const inner = photoBoxInnerOrigin(boxX, boxY);
+  const sectionHeight = collage.totalHeight + ENTRY_BOX.sectionGap;
+  const photoX = PAGE.margin;
+  const photoY = ensureVerticalSpace(doc, startY, sectionHeight, onNewPage);
 
   for (const placement of collage.placements) {
-    const x = inner.x + placement.x;
-    const y = inner.y + placement.y;
+    const x = photoX + placement.x;
+    const y = photoY + placement.y;
     const prepared = images.get(placement.index);
 
     if (prepared) {
@@ -239,7 +234,7 @@ function drawPhotoSection(
     }
   }
 
-  return boxY + boxHeight + ENTRY_BOX.sectionGap;
+  return photoY + collage.totalHeight + ENTRY_BOX.sectionGap;
 }
 
 const ENTRY_STYLE = {
@@ -501,8 +496,13 @@ async function renderMonthEntries(
 export async function generateBookPdf(
   entries: DiaryEntry[],
   bookTitle: string,
-  options: { diaryFontId?: string; cover?: BookCoverOptions } = {},
+  options: {
+    diaryFontId?: string;
+    cover?: BookCoverOptions;
+    bodyStyle?: EntryBodyStyle;
+  } = {},
 ): Promise<Buffer> {
+  setEntryBodyStyle(options.bodyStyle ?? 'marginRail');
   const fontPath = await resolveDiaryFontPath(options.diaryFontId);
   const sortedEntries = [...entries].sort((a, b) => a.date.localeCompare(b.date));
   const cover: BookCoverOptions = {

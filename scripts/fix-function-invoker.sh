@@ -10,7 +10,9 @@ echo "=== Cloud Run Invoker 권한 설정 ==="
 echo "gcloud 로그인이 필요합니다: gcloud auth login"
 echo ""
 
-for SERVICE in generateorderpdf seedtestorderdata; do
+for SERVICE in generateorderpdf seedtestorderdata \
+  admindevlistorders admindevupdateorder admindevlistusers \
+  admindevgetuserorders admindevupdateuser admindevgetuserstats; do
   echo "→ $SERVICE"
   gcloud run services add-iam-policy-binding "$SERVICE" \
     --region="$REGION" \

@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// ⚠️ 로컬/회사 PC 개발 전용 — 프로덕션 배포 금지
+// 배포: scripts/deploy-rules-dev.ps1
+// 복구: scripts/deploy-rules.sh (firestore.rules)
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    match /orders/{orderId} {
+      allow read, write: if true;
+    }
+
+    match /{path=**}/entries/{entryId} {
+      allow read: if true;
+    }
+  }
+}

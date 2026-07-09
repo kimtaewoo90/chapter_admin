@@ -8,7 +8,10 @@
     "deploy": "firebase deploy --only functions",
     "test": "npm run build && node --test lib/layout/engine.test.js lib/layout/stickerCollage.test.js",
     "pdf:local": "npm run build && node lib/scripts/localPdfTest.js",
-    "pdf:order": "npm run build && node lib/scripts/localPdfFromOrder.js"
+    "pdf:order": "npm run build && node lib/scripts/localPdfFromOrder.js",
+    "pdf:styles": "npm run build && node -e \"require('./lib/pdf/bodyStyle').printBodyStyleCatalog()\"",
+    "pdf:export-order": "npm run build && node lib/scripts/exportOrderJson.js",
+    "pdf:order-file": "npm run build && node lib/scripts/localPdfFromOrderFile.js"
   },
   "engines": {
     "node": "20"

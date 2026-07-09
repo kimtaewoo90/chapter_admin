@@ -1,15 +1,38 @@
+import { getEntryBodyStyle } from './bodyStyle';
+
+export type { EntryBodyStyle } from './bodyStyle';
+export {
+  BODY_STYLE_CATALOG,
+  bodyStyleLabel,
+  formatBodyStyleHelp,
+  getEntryBodyStyle,
+  printBodyStyleCatalog,
+  resolveBodyStyleIndex,
+  setEntryBodyStyle,
+} from './bodyStyle';
+
 /**
- * 일기 페이지 — 사진 박스 + 공책 줄무늬 글 박스
+ * 일기 본문 배경 — 5가지 스타일 (bodyStyle.ts 참고)
  */
 
 export const ENTRY_BOX = {
-  radius: 8,
+  radius: 6,
   pad: 12,
+  /** marginRail 전용 */
+  padLeft: 22,
   border: '#DDD6CA',
   photoBg: '#FFFFFF',
-  noteBg: '#FFFEF8',
-  ruleColor: '#E8E2D6',
-  ruleSpacing: 20,
+  noteBg: '#FAF7F1',
+  railColor: '#8B7355',
+  railWidth: 2,
+  railInset: 6,
+  dotSpacing: 16,
+  dotRadius: 0.65,
+  dotColor: '#CBC2B4',
+  tapeColor: '#F3E4B8',
+  tapeShadow: '#D9C99A',
+  tapeFiber: '#E8D8A8',
+  lineGap: 7,
   sectionGap: 10,
   boxGap: 14,
 } as const;
@@ -33,54 +56,213 @@ function setFont(
   else doc.font(weight === 'bold' ? 'Helvetica-Bold' : 'Helvetica');
 }
 
-/** 공책 줄 간격 — ruleSpacing 과 PDFKit 줄 높이를 맞춤 */
-function getNotebookMetrics(
+function getTextMetrics(
   doc: PDFKit.PDFDocument,
   fontPath: string | null,
   fontSize: number,
-): {
-  lineHeight: number;
-  lineGap: number;
-  lineStep: number;
-  /** 안쪽 상단 → 첫 줄 텍스트 y (baseline 이 첫 줄에 닿도록) */
-  textOffsetTop: number;
-} {
-  const { ruleSpacing } = ENTRY_BOX;
+): { lineHeight: number; lineGap: number; lineStep: number } {
   setFont(doc, fontPath, 'regular');
   doc.fontSize(fontSize);
   const lineHeight = doc.currentLineHeight();
-  const lineGap = ruleSpacing - lineHeight;
-  return {
-    lineHeight,
-    lineGap,
-    lineStep: ruleSpacing,
-    textOffsetTop: ruleSpacing - lineHeight,
-  };
+  const lineGap = ENTRY_BOX.lineGap;
+  return { lineHeight, lineGap, lineStep: lineHeight + lineGap };
 }
 
-function countNotebookLines(
+function measureTextBlockHeight(
   doc: PDFKit.PDFDocument,
   text: string,
   innerWidth: number,
-  metrics: ReturnType<typeof getNotebookMetrics>,
+  metrics: ReturnType<typeof getTextMetrics>,
 ): number {
   if (!text) return 0;
-  const height = doc.heightOfString(text, {
+  return doc.heightOfString(text, {
     width: innerWidth,
     lineGap: metrics.lineGap,
   });
-  if (height <= metrics.lineHeight + 0.5) return 1;
-  return Math.max(
-    1,
-    Math.round((height - metrics.lineHeight) / metrics.lineStep + 1),
-  );
 }
 
-function notebookContentHeight(lineCount: number): number {
-  return lineCount * ENTRY_BOX.ruleSpacing;
+function drawMarginRail(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  h: number,
+): void {
+  const { railColor, railWidth, railInset } = ENTRY_BOX;
+  const railX = x + railInset;
+
+  doc
+    .moveTo(railX, y + railInset)
+    .lineTo(railX, y + h - railInset)
+    .lineWidth(railWidth)
+    .lineCap('round')
+    .strokeColor(railColor)
+    .stroke();
 }
 
-function drawRoundedBox(
+function drawCornerBrackets(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  const len = Math.min(14, w * 0.12, h * 0.2);
+  const { railColor } = ENTRY_BOX;
+
+  doc.lineWidth(0.7).strokeColor(railColor);
+
+  doc.moveTo(x, y + len).lineTo(x, y).lineTo(x + len, y).stroke();
+  doc.moveTo(x + w - len, y).lineTo(x + w, y).lineTo(x + w, y + len).stroke();
+  doc.moveTo(x, y + h - len).lineTo(x, y + h).lineTo(x + len, y + h).stroke();
+  doc
+    .moveTo(x + w - len, y + h)
+    .lineTo(x + w, y + h)
+    .lineTo(x + w, y + h - len)
+    .stroke();
+}
+
+function drawDotGrid(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  const { pad, dotSpacing, dotRadius, dotColor, noteBg, radius } = ENTRY_BOX;
+
+  doc.roundedRect(x, y, w, h, radius).fillColor(noteBg).fill();
+
+  const left = x + pad;
+  const top = y + pad;
+  const right = x + w - pad;
+  const bottom = y + h - pad;
+  const areaW = right - left;
+  const areaH = bottom - top;
+
+  if (areaW <= 0 || areaH <= 0) return;
+
+  const cols = Math.max(1, Math.floor(areaW / dotSpacing));
+  const rows = Math.max(1, Math.floor(areaH / dotSpacing));
+  const gridW = cols * dotSpacing;
+  const gridH = rows * dotSpacing;
+  const startX = left + (areaW - gridW) / 2;
+  const startY = top + (areaH - gridH) / 2;
+
+  doc.fillColor(dotColor);
+  for (let row = 0; row <= rows; row++) {
+    for (let col = 0; col <= cols; col++) {
+      doc.circle(startX + col * dotSpacing, startY + row * dotSpacing, dotRadius).fill();
+    }
+  }
+}
+
+/** 겹친 타원으로 수채화 워시 */
+function drawWash(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  const { radius } = ENTRY_BOX;
+  const blobs = [
+    { cx: 0.28, cy: 0.22, rx: 0.42, ry: 0.32, color: '#E8D4C8', opacity: 0.5 },
+    { cx: 0.72, cy: 0.48, rx: 0.48, ry: 0.38, color: '#D4E0E8', opacity: 0.38 },
+    { cx: 0.4, cy: 0.78, rx: 0.44, ry: 0.28, color: '#E8E0D0', opacity: 0.45 },
+    { cx: 0.55, cy: 0.35, rx: 0.3, ry: 0.22, color: '#F0E4DC', opacity: 0.35 },
+  ];
+
+  doc.save();
+  doc.roundedRect(x, y, w, h, radius).clip();
+
+  for (const blob of blobs) {
+    doc.save();
+    doc.fillOpacity(blob.opacity);
+    doc
+      .ellipse(x + w * blob.cx, y + h * blob.cy, w * blob.rx, h * blob.ry)
+      .fill(blob.color);
+    doc.restore();
+  }
+
+  doc.restore();
+  doc
+    .roundedRect(x, y, w, h, radius)
+    .lineWidth(0.4)
+    .strokeColor('#E8E0D4')
+    .stroke();
+}
+
+/** 마스킹 테이프 스트립 */
+function drawTape(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  const { tapeColor, tapeShadow, tapeFiber } = ENTRY_BOX;
+  const insetX = 6;
+  const insetY = 4;
+  const tapeX = x + insetX;
+  const tapeY = y + insetY;
+  const tapeW = w - insetX * 2;
+  const tapeH = h - insetY * 2;
+
+  doc.save();
+  doc.translate(tapeX + tapeW / 2, tapeY + tapeH / 2);
+  doc.rotate(-0.6);
+  doc.translate(-(tapeX + tapeW / 2), -(tapeY + tapeH / 2));
+
+  doc
+    .roundedRect(tapeX + 2, tapeY + 3, tapeW, tapeH, 4)
+    .fillColor(tapeShadow)
+    .fillOpacity(0.25)
+    .fill();
+
+  doc.fillOpacity(1);
+  doc.roundedRect(tapeX, tapeY, tapeW, tapeH, 4).fillColor(tapeColor).fill();
+
+  doc.strokeColor(tapeFiber).lineWidth(0.35).opacity(0.55);
+  for (let i = 0; i < 7; i++) {
+    const ly = tapeY + tapeH * (0.12 + i * 0.13);
+    doc
+      .moveTo(tapeX + 10, ly)
+      .lineTo(tapeX + tapeW - 10, ly + (i % 2 === 0 ? 1.5 : -1))
+      .stroke();
+  }
+
+  doc.opacity(1);
+  doc.restore();
+}
+
+function drawTextBlockDecoration(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  align: TextAlign,
+): void {
+  switch (getEntryBodyStyle()) {
+    case 'marginRail':
+      if (align === 'center') drawCornerBrackets(doc, x, y, w, h);
+      else drawMarginRail(doc, x, y, h);
+      break;
+    case 'dotGrid':
+      drawDotGrid(doc, x, y, w, h);
+      break;
+    case 'wash':
+      drawWash(doc, x, y, w, h);
+      break;
+    case 'tape':
+      drawTape(doc, x, y, w, h);
+      break;
+    case 'minimal':
+      break;
+  }
+}
+
+function drawPhotoFrameBoxInner(
   doc: PDFKit.PDFDocument,
   x: number,
   y: number,
@@ -97,29 +279,6 @@ function drawRoundedBox(
     .stroke();
 }
 
-function drawNotebookLines(
-  doc: PDFKit.PDFDocument,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-): void {
-  const { pad, ruleSpacing, ruleColor } = ENTRY_BOX;
-  const innerX = x + pad;
-  const innerW = w - pad * 2;
-  const top = y + pad;
-  const bottom = y + h - pad;
-
-  for (let lineY = top + ruleSpacing; lineY < bottom; lineY += ruleSpacing) {
-    doc
-      .moveTo(innerX, lineY)
-      .lineTo(innerX + innerW, lineY)
-      .lineWidth(0.35)
-      .strokeColor(ruleColor)
-      .stroke();
-  }
-}
-
 export function measureNotebookTextHeight(
   doc: PDFKit.PDFDocument,
   fontPath: string | null,
@@ -127,25 +286,21 @@ export function measureNotebookTextHeight(
   innerWidth: number,
   fontSize: number,
 ): number {
-  const metrics = getNotebookMetrics(doc, fontPath, fontSize);
-  const lineCount = countNotebookLines(doc, text, innerWidth, metrics);
-  return notebookContentHeight(lineCount);
+  const metrics = getTextMetrics(doc, fontPath, fontSize);
+  return measureTextBlockHeight(doc, text, innerWidth, metrics);
 }
 
-/** maxHeight 안에 들어가는 텍스트 덩어리 (단어/줄 경계 우선) */
 function fitTextChunk(
   doc: PDFKit.PDFDocument,
   text: string,
   innerWidth: number,
   maxHeight: number,
-  metrics: ReturnType<typeof getNotebookMetrics>,
+  metrics: ReturnType<typeof getTextMetrics>,
 ): string {
   if (!text) return '';
 
   const fits = (candidate: string) =>
-    notebookContentHeight(
-      countNotebookLines(doc, candidate, innerWidth, metrics),
-    ) <= maxHeight;
+    measureTextBlockHeight(doc, candidate, innerWidth, metrics) <= maxHeight;
 
   if (fits(text)) return text;
 
@@ -177,13 +332,24 @@ function contentBottom(): number {
   return DIARY_PAGE.height - DIARY_PAGE.margin;
 }
 
-function minBoxHeight(minLines: number): number {
-  return minLines * ENTRY_BOX.ruleSpacing + ENTRY_BOX.pad * 2;
+function minBlockHeight(minLines: number, metrics: ReturnType<typeof getTextMetrics>): number {
+  return ENTRY_BOX.pad * 2 + Math.max(1, minLines) * metrics.lineStep;
 }
 
-/**
- * 공책 글 박스 — 페이지를 넘기면 다음 페이지에도 박스+줄무늬 유지
- */
+function textOrigin(
+  x: number,
+  width: number,
+  align: TextAlign,
+): { textX: number; innerWidth: number } {
+  const { pad, padLeft } = ENTRY_BOX;
+
+  if (getEntryBodyStyle() === 'marginRail' && align !== 'center') {
+    return { textX: x + padLeft, innerWidth: width - padLeft - pad };
+  }
+
+  return { textX: x + pad, innerWidth: width - pad * 2 };
+}
+
 export function drawNotebookTextFlow(
   doc: PDFKit.PDFDocument,
   fontPath: string | null,
@@ -199,8 +365,7 @@ export function drawNotebookTextFlow(
     onNewPage: () => void;
   },
 ): number {
-  const { pad, noteBg, sectionGap } = ENTRY_BOX;
-  const innerWidth = width - pad * 2;
+  const { pad, sectionGap } = ENTRY_BOX;
   const fontSize = options.fontSize;
   const align = options.align ?? 'left';
   const textColor = options.textColor ?? '#2C2824';
@@ -211,9 +376,11 @@ export function drawNotebookTextFlow(
   let cursorY = startY;
 
   while (remaining.length > 0) {
-    const metrics = getNotebookMetrics(doc, fontPath, fontSize);
+    const metrics = getTextMetrics(doc, fontPath, fontSize);
+    const { textX, innerWidth } = textOrigin(x, width, align);
+
     let maxBoxHeight = bottom - cursorY;
-    const minHeight = minBoxHeight(1);
+    const minHeight = minBlockHeight(1, metrics);
 
     if (maxBoxHeight < minHeight) {
       doc.addPage();
@@ -224,25 +391,23 @@ export function drawNotebookTextFlow(
 
     const maxContentHeight = Math.max(metrics.lineStep, maxBoxHeight - pad * 2);
     const chunk = fitTextChunk(doc, remaining, innerWidth, maxContentHeight, metrics);
-    const lineCount = Math.max(1, countNotebookLines(doc, chunk, innerWidth, metrics));
-    const effectiveMinLines = Math.min(minLines, lineCount);
-    const contentHeight = notebookContentHeight(
-      Math.max(lineCount, effectiveMinLines),
-    );
+    let contentHeight = measureTextBlockHeight(doc, chunk, innerWidth, metrics);
+    const minContentHeight = minLines * metrics.lineStep;
+    contentHeight = Math.max(contentHeight, Math.min(minContentHeight, maxContentHeight));
     const boxHeight = Math.min(maxBoxHeight, pad * 2 + contentHeight);
-    const textY = cursorY + pad + metrics.textOffsetTop;
-    const textHeight = contentHeight - metrics.textOffsetTop;
+    const textY = cursorY + pad;
 
-    drawRoundedBox(doc, x, cursorY, width, boxHeight, noteBg);
-    drawNotebookLines(doc, x, cursorY, width, boxHeight);
+    drawTextBlockDecoration(doc, x, cursorY, width, boxHeight, align);
 
+    setFont(doc, fontPath, 'regular');
     doc.fillColor(textColor);
-    doc.text(chunk, x + pad, textY, {
+    doc.fontSize(fontSize);
+    doc.text(chunk, textX, textY, {
       width: innerWidth,
       lineGap: metrics.lineGap,
       align,
       lineBreak: true,
-      height: textHeight,
+      height: boxHeight - pad * 2,
     });
 
     remaining = remaining.slice(chunk.length).trimStart();
@@ -250,7 +415,7 @@ export function drawNotebookTextFlow(
 
     if (remaining.length > 0) {
       cursorY += sectionGap;
-      if (cursorY + minBoxHeight(1) > bottom) {
+      if (cursorY + minBlockHeight(1, metrics) > bottom) {
         doc.addPage();
         options.onNewPage();
         cursorY = DIARY_PAGE.margin;
@@ -261,7 +426,6 @@ export function drawNotebookTextFlow(
   return cursorY;
 }
 
-/** 짧은 글 — 한 페이지 안에 들어갈 때 */
 export function drawNotebookTextBox(
   doc: PDFKit.PDFDocument,
   fontPath: string | null,
@@ -284,26 +448,26 @@ export function drawNotebookTextBox(
     });
   }
 
-  const { pad, noteBg } = ENTRY_BOX;
-  const innerWidth = width - pad * 2;
+  const { pad } = ENTRY_BOX;
   const fontSize = options.fontSize;
   const align = options.align ?? 'left';
   const textColor = options.textColor ?? '#2C2824';
   const minLines = options.minLines ?? 3;
-  const metrics = getNotebookMetrics(doc, fontPath, fontSize);
+  const metrics = getTextMetrics(doc, fontPath, fontSize);
+  const { textX, innerWidth } = textOrigin(x, width, align);
 
-  const lineCount = Math.max(
-    minLines,
-    countNotebookLines(doc, text, innerWidth, metrics),
+  const contentHeight = Math.max(
+    measureTextBlockHeight(doc, text, innerWidth, metrics),
+    minLines * metrics.lineStep,
   );
-  const contentHeight = notebookContentHeight(lineCount);
   const boxHeight = pad * 2 + contentHeight;
 
-  drawRoundedBox(doc, x, y, width, boxHeight, noteBg);
-  drawNotebookLines(doc, x, y, width, boxHeight);
+  drawTextBlockDecoration(doc, x, y, width, boxHeight, align);
 
+  setFont(doc, fontPath, 'regular');
   doc.fillColor(textColor);
-  doc.text(text, x + pad, y + pad + metrics.textOffsetTop, {
+  doc.fontSize(fontSize);
+  doc.text(text, textX, y + pad, {
     width: innerWidth,
     lineGap: metrics.lineGap,
     align,
@@ -321,8 +485,15 @@ export function drawPhotoFrameBox(
 ): number {
   const { pad, photoBg } = ENTRY_BOX;
   const boxHeight = collageHeight + pad * 2;
-  drawRoundedBox(doc, x, y, width, boxHeight, photoBg);
+  drawPhotoFrameBoxInner(doc, x, y, width, boxHeight, photoBg);
   return boxHeight;
+}
+
+export function bodyTextInnerWidth(outerWidth: number): number {
+  if (getEntryBodyStyle() === 'marginRail') {
+    return outerWidth - ENTRY_BOX.padLeft - ENTRY_BOX.pad;
+  }
+  return outerWidth - ENTRY_BOX.pad * 2;
 }
 
 export function photoBoxInnerWidth(outerWidth: number): number {

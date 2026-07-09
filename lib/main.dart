@@ -57,8 +57,8 @@ class ChapterAdminApp extends StatelessWidget {
         authService: authService,
         child: AdminShell(
           authService: authService,
-          orderService: OrderService(),
-          userService: UserService(),
+          orderService: OrderService(authService: authService),
+          userService: UserService(authService: authService),
         ),
       ),
     );

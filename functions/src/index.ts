@@ -5,11 +5,83 @@ import { logger } from 'firebase-functions';
 
 import { generatePdfForOrder } from './orders/generatePdf';
 import { seedTestOrder } from './orders/seedTestOrder';
+import {
+  getUserOrdersDev,
+  getUserStatsDev,
+  listUsersDev,
+  updateUserAdminFieldsDev,
+} from './admin/devUsers';
+import { listOrdersDev, updateOrderDev } from './admin/devOrders';
 
 const STORAGE_BUCKET = 'chapter-cc187.firebasestorage.app';
 
+const devCallable = {
+  region: 'asia-northeast3' as const,
+  invoker: 'public' as const,
+};
+
 initializeApp({
   storageBucket: STORAGE_BUCKET,
+});
+
+/** 개발 모드 — Admin SDK로 orders 목록 (Firestore rules 우회) */
+export const adminDevListOrders = onCall(devCallable, async (request) => {
+  try {
+    return await listOrdersDev(request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new HttpsError('internal', message);
+  }
+});
+
+/** 개발 모드 — 주문 상태 변경 */
+export const adminDevUpdateOrder = onCall(devCallable, async (request) => {
+  try {
+    return await updateOrderDev(request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new HttpsError('internal', message);
+  }
+});
+
+/** 개발 모드 — 유저 목록 */
+export const adminDevListUsers = onCall(devCallable, async (request) => {
+  try {
+    return await listUsersDev(request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new HttpsError('internal', message);
+  }
+});
+
+/** 개발 모드 — 유저 주문 내역 */
+export const adminDevGetUserOrders = onCall(devCallable, async (request) => {
+  try {
+    return await getUserOrdersDev(request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new HttpsError('internal', message);
+  }
+});
+
+/** 개발 모드 — 유저 메모/비활성화 */
+export const adminDevUpdateUser = onCall(devCallable, async (request) => {
+  try {
+    return await updateUserAdminFieldsDev(request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new HttpsError('internal', message);
+  }
+});
+
+/** 개발 모드 — 유저 entries/books 수 */
+export const adminDevGetUserStats = onCall(devCallable, async (request) => {
+  try {
+    return await getUserStatsDev(request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new HttpsError('internal', message);
+  }
 });
 
 /** Firestore에 PDF 테스트용 주문 스냅샷 삽입 */
